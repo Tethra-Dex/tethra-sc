@@ -210,4 +210,91 @@ contract RiskManager is Ownable {
     function getOpenInterest(string calldata symbol) external view returns (uint256) {
         return currentOpenInterest[symbol];
     }
+    
+    /**
+     * @notice Validate trade before opening position (MarketExecutor interface)
+     * @param trader Address of the trader
+     * @param symbol Asset symbol
+     * @param leverage Leverage multiplier
+     * @param collateral Collateral amount in USDC
+     * @param isLong True for long, false for short
+     * @return valid Whether the trade is valid
+     */
+    function validateTrade(
+        address trader,
+        string calldata symbol,
+        uint256 leverage,
+        uint256 collateral,
+        bool isLong
+    ) external view returns (bool valid) {
+        // Check trader is valid
+        if (trader == address(0)) return false;
+        
+        // Check asset config
+        AssetConfig memory config = assetConfigs[symbol];
+        if (!config.enabled) return false;
+        
+        // Check collateral
+        if (collateral == 0) return false;
+        
+        // Check leverage
+        if (leverage == 0 || leverage > config.maxLeverage) return false;
+        
+        // Calculate position size
+        uint256 size = collateral * leverage;
+        
+        // Check position size
+        if (size > config.maxPositionSize) return false;
+        
+        // Check open interest
+        if (currentOpenInterest[symbol] + size > config.maxOpenInterest) return false;
+        
+        return true;
+    }
+    
+    /**
+     * @notice Check if position should be liquidated (MarketExecutor interface)
+     * @param positionId Position ID (not used in current implementation)
+     * @param currentPrice Current market price (8 decimals)
+     * @param collateral Collateral amount
+     * @param size Position size
+     * @param entryPrice Entry price (8 decimals)
+     * @param isLong True for long, false for short
+     * @return shouldLiquidate Whether position should be liquidated
+     */
+    function shouldLiquidate(
+        uint256 positionId,
+        uint256 currentPrice,
+        uint256 collateral,
+        uint256 size,
+        uint256 entryPrice,
+        bool isLong
+    ) external view returns (bool) {
+        // For now, we need to know the symbol to get liquidation threshold
+        // Since we don't have symbol in this signature, we'll use a default
+        // In production, you'd query PositionManager for the symbol
+        // For testing, we'll use "BTC" as default
+        
+        // Calculate PnL percentage
+        int256 priceDiff;
+        if (isLong) {
+            priceDiff = int256(currentPrice) - int256(entryPrice);
+        } else {
+            priceDiff = int256(entryPrice) - int256(currentPrice);
+        }
+        
+        // Calculate loss in collateral terms
+        // loss = (priceDiff * size) / entryPrice
+        int256 pnl = (priceDiff * int256(size)) / int256(entryPrice);
+        
+        // If loss, check if it exceeds liquidation threshold (75% = 7500 bps)
+        if (pnl < 0) {
+            uint256 loss = uint256(-pnl);
+            // Liquidate if loss >= 75% of collateral
+            uint256 liquidationThreshold = (collateral * 7500) / 10000;
+            return loss >= liquidationThreshold;
+        }
+        
+        return false;
+    }
 }

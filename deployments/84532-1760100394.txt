@@ -1,0 +1,33 @@
+# Tethra DEX - Deployment Addresses
+
+## Network Information
+- Chain ID: 84532
+- Block Number: 32166053
+- Timestamp: 1760100394
+
+## Token Contracts
+- MockUSDC: 0x9d660c5d4BFE4b7fcC76f327b22ABF7773DD48c1
+- TethraToken: 0x6f1330f207Ab5e2a52c550AF308bA28e3c517311
+
+## Core Trading Contracts
+- RiskManager: 0x7416ae0DdA4930f2314352A70521C75eD80006d7
+- PositionManager: 0x8eA6059Bd95a9f0A47Ce361130ffB007415519aF
+- TreasuryManager: 0xe2BF339Beb501f0C5263170189b6960AC416F1f3
+- MarketExecutor: 0x6D91332E27a5BddCe9486ad4e9cA3C319947a302
+
+## Economic Contracts
+- TethraStaking: 0x69FFE0989234971eA2bc542c84c9861b0D8F9b17
+- LiquidityMining: 0x49c37C3b3a96028D2A1A1e678A302C1d727f3FEF
+
+## Utility Contracts
+- USDCPaymaster: 0x94FbB9C6C854599c7562c282eADa4889115CCd8E
+
+## Configuration
+- Deployer: 0x722550Bb8Ec6416522AfE9EAf446F0DE3262f701
+- Treasury: 0x722550Bb8Ec6416522AfE9EAf446F0DE3262f701
+- Team: 0x722550Bb8Ec6416522AfE9EAf446F0DE3262f701
+- Price Signer: 0x722550Bb8Ec6416522AfE9EAf446F0DE3262f701
+
+## Assets
+- BTC: Max 100x leverage, 10M USDC max position
+- ETH: Max 100x leverage, 10M USDC max position

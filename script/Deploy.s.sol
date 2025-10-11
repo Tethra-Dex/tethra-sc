@@ -134,8 +134,8 @@ contract Deploy is Script {
         // Deploy MarketExecutor
         marketExecutor = new MarketExecutor(
             address(usdc),
-            address(positionManager),
             address(riskManager),
+            address(positionManager),
             address(treasuryManager),
             priceSigner
         );

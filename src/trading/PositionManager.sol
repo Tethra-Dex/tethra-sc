@@ -10,33 +10,36 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev Tracks positions, calculates PnL, handles position lifecycle
  */
 contract PositionManager is AccessControl, ReentrancyGuard {
-    
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
-    
-    enum PositionStatus { OPEN, CLOSED, LIQUIDATED }
-    
+
+    enum PositionStatus {
+        OPEN,
+        CLOSED,
+        LIQUIDATED
+    }
+
     struct Position {
         uint256 id;
         address trader;
-        string symbol;           // Asset symbol (BTC, ETH, etc)
-        bool isLong;            // True for long, false for short
-        uint256 collateral;     // Collateral in USDC (6 decimals)
-        uint256 size;           // Position size = collateral * leverage (6 decimals)
-        uint256 leverage;       // Leverage multiplier (e.g., 10 for 10x)
-        uint256 entryPrice;     // Entry price (8 decimals)
-        uint256 openTimestamp;  // When position was opened
-        PositionStatus status;  // Current status
+        string symbol; // Asset symbol (BTC, ETH, etc)
+        bool isLong; // True for long, false for short
+        uint256 collateral; // Collateral in USDC (6 decimals)
+        uint256 size; // Position size = collateral * leverage (6 decimals)
+        uint256 leverage; // Leverage multiplier (e.g., 10 for 10x)
+        uint256 entryPrice; // Entry price (8 decimals)
+        uint256 openTimestamp; // When position was opened
+        PositionStatus status; // Current status
     }
-    
+
     // Position ID counter
     uint256 public nextPositionId = 1;
-    
+
     // Position ID => Position data
     mapping(uint256 => Position) public positions;
-    
+
     // User address => array of position IDs
     mapping(address => uint256[]) public userPositions;
-    
+
     // Events
     event PositionOpened(
         uint256 indexed positionId,
@@ -48,24 +51,16 @@ contract PositionManager is AccessControl, ReentrancyGuard {
         uint256 leverage,
         uint256 entryPrice
     );
-    
-    event PositionClosed(
-        uint256 indexed positionId,
-        uint256 exitPrice,
-        int256 pnl
-    );
-    
-    event PositionLiquidated(
-        uint256 indexed positionId,
-        uint256 liquidationPrice,
-        address liquidator
-    );
-    
+
+    event PositionClosed(uint256 indexed positionId, uint256 exitPrice, int256 pnl);
+
+    event PositionLiquidated(uint256 indexed positionId, uint256 liquidationPrice, address liquidator);
+
     constructor() {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(EXECUTOR_ROLE, msg.sender);
     }
-    
+
     /**
      * @notice Create a new position
      * @param trader Address of the trader
@@ -88,10 +83,10 @@ contract PositionManager is AccessControl, ReentrancyGuard {
         require(collateral > 0, "PositionManager: Invalid collateral");
         require(leverage > 0, "PositionManager: Invalid leverage");
         require(entryPrice > 0, "PositionManager: Invalid price");
-        
+
         positionId = nextPositionId++;
         uint256 size = collateral * leverage;
-        
+
         positions[positionId] = Position({
             id: positionId,
             trader: trader,
@@ -104,76 +99,67 @@ contract PositionManager is AccessControl, ReentrancyGuard {
             openTimestamp: block.timestamp,
             status: PositionStatus.OPEN
         });
-        
+
         userPositions[trader].push(positionId);
-        
-        emit PositionOpened(
-            positionId,
-            trader,
-            symbol,
-            isLong,
-            collateral,
-            size,
-            leverage,
-            entryPrice
-        );
+
+        emit PositionOpened(positionId, trader, symbol, isLong, collateral, size, leverage, entryPrice);
     }
-    
+
     /**
      * @notice Close a position
      * @param positionId Position ID to close
      * @param exitPrice Exit price (8 decimals)
      * @return pnl Profit/loss in USDC (6 decimals, can be negative)
      */
-    function closePosition(
-        uint256 positionId,
-        uint256 exitPrice
-    ) external onlyRole(EXECUTOR_ROLE) nonReentrant returns (int256 pnl) {
+    function closePosition(uint256 positionId, uint256 exitPrice)
+        external
+        onlyRole(EXECUTOR_ROLE)
+        nonReentrant
+        returns (int256 pnl)
+    {
         Position storage position = positions[positionId];
         require(position.id != 0, "PositionManager: Position not found");
         require(position.status == PositionStatus.OPEN, "PositionManager: Position not open");
         require(exitPrice > 0, "PositionManager: Invalid exit price");
-        
+
         pnl = calculatePnL(positionId, exitPrice);
         position.status = PositionStatus.CLOSED;
-        
+
         emit PositionClosed(positionId, exitPrice, pnl);
     }
-    
+
     /**
      * @notice Liquidate a position
      * @param positionId Position ID to liquidate
      * @param liquidationPrice Price at liquidation (8 decimals)
      */
-    function liquidatePosition(
-        uint256 positionId,
-        uint256 liquidationPrice
-    ) external onlyRole(EXECUTOR_ROLE) nonReentrant {
+    function liquidatePosition(uint256 positionId, uint256 liquidationPrice)
+        external
+        onlyRole(EXECUTOR_ROLE)
+        nonReentrant
+    {
         Position storage position = positions[positionId];
         require(position.id != 0, "PositionManager: Position not found");
         require(position.status == PositionStatus.OPEN, "PositionManager: Position not open");
-        
+
         position.status = PositionStatus.LIQUIDATED;
-        
+
         emit PositionLiquidated(positionId, liquidationPrice, msg.sender);
     }
-    
+
     /**
      * @notice Calculate PnL for a position
      * @param positionId Position ID
      * @param currentPrice Current price (8 decimals)
      * @return pnl Profit/loss in USDC (6 decimals, can be negative)
      */
-    function calculatePnL(
-        uint256 positionId,
-        uint256 currentPrice
-    ) public view returns (int256 pnl) {
+    function calculatePnL(uint256 positionId, uint256 currentPrice) public view returns (int256 pnl) {
         Position memory position = positions[positionId];
         require(position.id != 0, "PositionManager: Position not found");
         require(currentPrice > 0, "PositionManager: Invalid price");
-        
+
         int256 priceDiff;
-        
+
         if (position.isLong) {
             // Long: profit when price goes up
             priceDiff = int256(currentPrice) - int256(position.entryPrice);
@@ -181,13 +167,13 @@ contract PositionManager is AccessControl, ReentrancyGuard {
             // Short: profit when price goes down
             priceDiff = int256(position.entryPrice) - int256(currentPrice);
         }
-        
+
         // PnL = (priceDiff / entryPrice) * size
         // All amounts in USDC (6 decimals)
         // Prices in 8 decimals, so we need to adjust
         pnl = (priceDiff * int256(position.size)) / int256(position.entryPrice);
     }
-    
+
     /**
      * @notice Get position details
      * @param positionId Position ID
@@ -196,7 +182,7 @@ contract PositionManager is AccessControl, ReentrancyGuard {
     function getPosition(uint256 positionId) external view returns (Position memory) {
         return positions[positionId];
     }
-    
+
     /**
      * @notice Get all position IDs for a user
      * @param user User address
@@ -205,7 +191,7 @@ contract PositionManager is AccessControl, ReentrancyGuard {
     function getUserPositions(address user) external view returns (uint256[] memory) {
         return userPositions[user];
     }
-    
+
     /**
      * @notice Get all open positions for a user
      * @param user User address
@@ -213,7 +199,7 @@ contract PositionManager is AccessControl, ReentrancyGuard {
      */
     function getUserOpenPositions(address user) external view returns (Position[] memory) {
         uint256[] memory userPositionIds = userPositions[user];
-        
+
         // Count open positions
         uint256 openCount = 0;
         for (uint256 i = 0; i < userPositionIds.length; i++) {
@@ -221,7 +207,7 @@ contract PositionManager is AccessControl, ReentrancyGuard {
                 openCount++;
             }
         }
-        
+
         // Build array of open positions
         Position[] memory openPositions = new Position[](openCount);
         uint256 index = 0;
@@ -231,10 +217,10 @@ contract PositionManager is AccessControl, ReentrancyGuard {
                 index++;
             }
         }
-        
+
         return openPositions;
     }
-    
+
     /**
      * @notice Check if position exists
      * @param positionId Position ID
@@ -243,7 +229,7 @@ contract PositionManager is AccessControl, ReentrancyGuard {
     function positionExists(uint256 positionId) external view returns (bool) {
         return positions[positionId].id != 0;
     }
-    
+
     /**
      * @notice Get position status
      * @param positionId Position ID

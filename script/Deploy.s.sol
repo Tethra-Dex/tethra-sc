@@ -18,7 +18,7 @@ import {USDCPaymaster} from "../src/paymaster/USDCPaymaster.sol";
  * @title Deploy
  * @notice Complete deployment script for Tethra DEX
  * @dev Deploys all contracts in correct order and initializes them
- * 
+ *
  * Usage:
  * - Local: forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
  * - Testnet: forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify
@@ -47,7 +47,7 @@ contract Deploy is Script {
     function run() public {
         // Get deployer address
         deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
-        
+
         // Set addresses (can be overridden via env vars)
         treasury = vm.envOr("TREASURY_ADDRESS", deployer);
         team = vm.envOr("TEAM_ADDRESS", deployer);
@@ -56,7 +56,7 @@ contract Deploy is Script {
         console.log("\n=================================================");
         console.log("        TETHRA DEX - DEPLOYMENT SCRIPT");
         console.log("=================================================\n");
-        
+
         console.log("Deployer Address:", deployer);
         console.log("Treasury Address:", treasury);
         console.log("Team Address:", team);
@@ -115,11 +115,7 @@ contract Deploy is Script {
         console.log("[6/9] LiquidityMining deployed at:", address(liquidityMining));
 
         // Deploy TreasuryManager
-        treasuryManager = new TreasuryManager(
-            address(usdc),
-            treasury,
-            address(tethraStaking)
-        );
+        treasuryManager = new TreasuryManager(address(usdc), treasury, address(tethraStaking));
         console.log("[7/9] TreasuryManager deployed at:", address(treasuryManager));
 
         console.log("");
@@ -133,11 +129,7 @@ contract Deploy is Script {
 
         // Deploy MarketExecutor
         marketExecutor = new MarketExecutor(
-            address(usdc),
-            address(riskManager),
-            address(positionManager),
-            address(treasuryManager),
-            priceSigner
+            address(usdc), address(riskManager), address(positionManager), address(treasuryManager), priceSigner
         );
         console.log("[8/9] MarketExecutor deployed at:", address(marketExecutor));
 
@@ -225,11 +217,11 @@ contract Deploy is Script {
         // Mint initial USDC to deployer for liquidity
         uint256 initialLiquidity = 1_000_000e6; // 1M USDC
         usdc.mint(deployer, initialLiquidity);
-        
+
         // Approve and add liquidity to TreasuryManager
         usdc.approve(address(treasuryManager), initialLiquidity);
         treasuryManager.addLiquidity(initialLiquidity);
-        
+
         console.log("[OK] Added initial liquidity:");
         console.log("     Amount: 1,000,000 USDC");
 
@@ -334,41 +326,68 @@ contract Deploy is Script {
         string memory deploymentInfo = string.concat(
             "# Tethra DEX - Deployment Addresses\n\n",
             "## Network Information\n",
-            "- Chain ID: ", vm.toString(block.chainid), "\n",
-            "- Block Number: ", vm.toString(block.number), "\n",
-            "- Timestamp: ", vm.toString(block.timestamp), "\n\n",
+            "- Chain ID: ",
+            vm.toString(block.chainid),
+            "\n",
+            "- Block Number: ",
+            vm.toString(block.number),
+            "\n",
+            "- Timestamp: ",
+            vm.toString(block.timestamp),
+            "\n\n",
             "## Token Contracts\n",
-            "- MockUSDC: ", vm.toString(address(usdc)), "\n",
-            "- TethraToken: ", vm.toString(address(tetra)), "\n\n",
+            "- MockUSDC: ",
+            vm.toString(address(usdc)),
+            "\n",
+            "- TethraToken: ",
+            vm.toString(address(tetra)),
+            "\n\n",
             "## Core Trading Contracts\n",
-            "- RiskManager: ", vm.toString(address(riskManager)), "\n",
-            "- PositionManager: ", vm.toString(address(positionManager)), "\n",
-            "- TreasuryManager: ", vm.toString(address(treasuryManager)), "\n",
-            "- MarketExecutor: ", vm.toString(address(marketExecutor)), "\n\n",
+            "- RiskManager: ",
+            vm.toString(address(riskManager)),
+            "\n",
+            "- PositionManager: ",
+            vm.toString(address(positionManager)),
+            "\n",
+            "- TreasuryManager: ",
+            vm.toString(address(treasuryManager)),
+            "\n",
+            "- MarketExecutor: ",
+            vm.toString(address(marketExecutor)),
+            "\n\n",
             "## Economic Contracts\n",
-            "- TethraStaking: ", vm.toString(address(tethraStaking)), "\n",
-            "- LiquidityMining: ", vm.toString(address(liquidityMining)), "\n\n",
+            "- TethraStaking: ",
+            vm.toString(address(tethraStaking)),
+            "\n",
+            "- LiquidityMining: ",
+            vm.toString(address(liquidityMining)),
+            "\n\n",
             "## Utility Contracts\n",
-            "- USDCPaymaster: ", vm.toString(address(usdcPaymaster)), "\n\n",
+            "- USDCPaymaster: ",
+            vm.toString(address(usdcPaymaster)),
+            "\n\n",
             "## Configuration\n",
-            "- Deployer: ", vm.toString(deployer), "\n",
-            "- Treasury: ", vm.toString(treasury), "\n",
-            "- Team: ", vm.toString(team), "\n",
-            "- Price Signer: ", vm.toString(priceSigner), "\n\n",
+            "- Deployer: ",
+            vm.toString(deployer),
+            "\n",
+            "- Treasury: ",
+            vm.toString(treasury),
+            "\n",
+            "- Team: ",
+            vm.toString(team),
+            "\n",
+            "- Price Signer: ",
+            vm.toString(priceSigner),
+            "\n\n",
             "## Assets\n",
             "- BTC: Max 100x leverage, 10M USDC max position\n",
             "- ETH: Max 100x leverage, 10M USDC max position\n"
         );
 
         // Write to file
-        string memory filename = string.concat(
-            "./deployments/",
-            vm.toString(block.chainid),
-            "-",
-            vm.toString(block.timestamp),
-            ".txt"
-        );
-        
+        string memory filename =
+            string.concat("./deployments/", vm.toString(block.chainid), "-", vm.toString(block.timestamp), ".txt");
+
         vm.writeFile(filename, deploymentInfo);
         console.log("Deployment addresses saved to:", filename);
     }

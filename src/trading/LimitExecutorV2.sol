@@ -61,8 +61,6 @@ interface ITreasuryManager {
     function collectFee(address from, uint256 amount) external;
     function distributeProfit(address to, uint256 amount) external;
     function refundCollateral(address to, uint256 amount) external;
-    function collectExecutionFee(address from, uint256 amount) external;
-    function payKeeperFee(address keeper, uint256 amount) external;
 }
 
 /**
@@ -73,6 +71,7 @@ interface ITreasuryManager {
  *      2. Keeper monitor price
  *      3. Keeper execute order on-chain (keeper bayar gas)
  *      4. Contract pull USDC dari user saat execute (bukan saat create)
+ *      5. Trading fee (0.05%) ONLY charged on CLOSE, not on OPEN
  */
 contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     using ECDSA for bytes32;
@@ -121,8 +120,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         uint256 executedAt;
         uint256 expiresAt;
         uint256 nonce;
-        uint256 maxExecutionFee;
-        uint256 executionFeePaid;
     }
 
     struct SignedPrice {
@@ -161,8 +158,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         uint256 indexed orderId,
         uint256 indexed positionId,
         address indexed keeper,
-        uint256 executionPrice,
-        uint256 keeperFee
+        uint256 executionPrice
     );
 
     event LimitOrderCancelled(uint256 indexed orderId, address indexed trader);
@@ -207,7 +203,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
      * @param collateral Collateral amount
      * @param leverage Leverage
      * @param triggerPrice Trigger price
-     * @param maxExecutionFee Maximum keeper fee user is willing to pay (in USDC, 6 decimals)
      * @param nonce User's current nonce
      * @param expiresAt Expiration timestamp
      * @param userSignature User's signature
@@ -219,7 +214,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         uint256 collateral,
         uint256 leverage,
         uint256 triggerPrice,
-        uint256 maxExecutionFee,
         uint256 nonce,
         uint256 expiresAt,
         bytes calldata userSignature
@@ -227,7 +221,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(collateral > 0, "Invalid collateral");
         require(leverage > 0, "Invalid leverage");
         require(triggerPrice > 0, "Invalid trigger price");
-        require(maxExecutionFee > 0, "Invalid max execution fee");
         require(block.timestamp < expiresAt, "Order expired");
         require(expiresAt <= block.timestamp + ORDER_VALIDITY_PERIOD, "Expiry too far");
         require(nonce == userOrderNonces[trader], "Invalid nonce");
@@ -241,7 +234,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
                 collateral,
                 leverage,
                 triggerPrice,
-                maxExecutionFee,
                 nonce,
                 expiresAt,
                 address(this)
@@ -271,9 +263,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
             createdAt: block.timestamp,
             executedAt: 0,
             expiresAt: expiresAt,
-            nonce: nonce,
-            maxExecutionFee: maxExecutionFee,
-            executionFeePaid: 0
+            nonce: nonce
         });
 
         userOrders[trader].push(orderId);
@@ -282,11 +272,11 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Execute limit open order - KEEPER BAYAR GAS, CONTRACT PULL USDC DARI USER
+     * @notice Execute limit open order - NO FEE on open, only pull collateral
      * @param orderId Order ID
      * @param signedPrice Signed price from backend
      */
-    function executeLimitOpenOrder(uint256 orderId, SignedPrice calldata signedPrice, uint256 executionFeePaid)
+    function executeLimitOpenOrder(uint256 orderId, SignedPrice calldata signedPrice)
         external
         onlyRole(KEEPER_ROLE)
         nonReentrant
@@ -299,8 +289,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(order.orderType == OrderType.LIMIT_OPEN, "Not limit open");
         require(block.timestamp < order.expiresAt, "Order expired");
         require(keccak256(bytes(order.symbol)) == keccak256(bytes(signedPrice.symbol)), "Symbol mismatch");
-        require(executionFeePaid > 0, "Execution fee required");
-        require(executionFeePaid <= order.maxExecutionFee, "Execution fee above max");
 
         // Verify price signature
         _verifySignedPrice(signedPrice);
@@ -318,33 +306,20 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
             "Trade validation failed"
         );
 
-        // Calculate total cost
-        uint256 positionSize = order.collateral * order.leverage;
-        uint256 tradingFee = (positionSize * tradingFeeBps) / 10000;
-        uint256 totalCost = order.collateral + tradingFee + executionFeePaid;
-
-        // NOW PULL USDC FROM USER (user must have approved contract beforehand)
-        require(usdc.transferFrom(order.trader, address(treasuryManager), totalCost), "USDC transfer failed");
+        // Pull ONLY collateral from user (NO TRADING FEE on open!)
+        require(usdc.transferFrom(order.trader, address(treasuryManager), order.collateral), "USDC transfer failed");
 
         // Create position
         uint256 positionId = positionManager.createPosition(
             order.trader, order.symbol, order.isLong, order.collateral, order.leverage, signedPrice.price
         );
 
-        // Collect fees (already transferred above)
-        treasuryManager.collectFee(order.trader, tradingFee);
-        treasuryManager.collectExecutionFee(order.trader, executionFeePaid);
-
-        // Pay keeper
-        treasuryManager.payKeeperFee(msg.sender, executionFeePaid);
-
         // Update order
         order.status = OrderStatus.EXECUTED;
         order.positionId = positionId;
         order.executedAt = block.timestamp;
-        order.executionFeePaid = executionFeePaid;
 
-        emit LimitOrderExecuted(orderId, positionId, msg.sender, signedPrice.price, executionFeePaid);
+        emit LimitOrderExecuted(orderId, positionId, msg.sender, signedPrice.price);
     }
 
     /**
@@ -373,7 +348,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         address trader,
         uint256 positionId,
         uint256 triggerPrice,
-        uint256 maxExecutionFee,
         uint256 nonce,
         uint256 expiresAt,
         bytes calldata userSignature
@@ -381,7 +355,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(triggerPrice > 0, "Invalid trigger price");
         require(block.timestamp < expiresAt, "Order expired");
         require(nonce == userOrderNonces[trader], "Invalid nonce");
-        require(maxExecutionFee > 0, "Invalid max execution fee");
 
         // Get position
         IPositionManager.Position memory position = positionManager.getPosition(positionId);
@@ -390,7 +363,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
 
         // Verify signature
         bytes32 messageHash = keccak256(
-            abi.encodePacked(trader, positionId, triggerPrice, maxExecutionFee, nonce, expiresAt, address(this))
+            abi.encodePacked(trader, positionId, triggerPrice, nonce, expiresAt, address(this))
         );
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
@@ -414,9 +387,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
             createdAt: block.timestamp,
             executedAt: 0,
             expiresAt: expiresAt,
-            nonce: nonce,
-            maxExecutionFee: maxExecutionFee,
-            executionFeePaid: 0
+            nonce: nonce
         });
 
         userOrders[trader].push(orderId);
@@ -425,9 +396,9 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Execute limit close order
+     * @notice Execute limit close order - Trading fee (0.05%) charged on close
      */
-    function executeLimitCloseOrder(uint256 orderId, SignedPrice calldata signedPrice, uint256 executionFeePaid)
+    function executeLimitCloseOrder(uint256 orderId, SignedPrice calldata signedPrice)
         external
         onlyRole(KEEPER_ROLE)
         nonReentrant
@@ -439,8 +410,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(order.status == OrderStatus.PENDING, "Order not pending");
         require(order.orderType == OrderType.LIMIT_CLOSE, "Not limit close");
         require(block.timestamp < order.expiresAt, "Order expired");
-        require(executionFeePaid > 0, "Execution fee required");
-        require(executionFeePaid <= order.maxExecutionFee, "Execution fee above max");
 
         _verifySignedPrice(signedPrice);
 
@@ -457,34 +426,34 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Close position
         int256 pnl = positionManager.closePosition(order.positionId, signedPrice.price);
 
-        // Settle
-        uint256 tradingFee = (position.size * tradingFeeBps) / 10000;
+        // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
+        uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
+        // Settle with trading fee deduction
         if (pnl > 0) {
             uint256 profit = uint256(pnl);
-            uint256 netAmount = position.collateral + profit - tradingFee - executionFeePaid;
+            uint256 netAmount = position.collateral + profit - tradingFee;
+            treasuryManager.collectFee(order.trader, tradingFee);
             treasuryManager.refundCollateral(order.trader, netAmount);
         } else if (pnl < 0) {
             uint256 loss = uint256(-pnl);
-            if (position.collateral > loss + tradingFee + executionFeePaid) {
-                uint256 netAmount = position.collateral - loss - tradingFee - executionFeePaid;
+            if (position.collateral > loss + tradingFee) {
+                uint256 netAmount = position.collateral - loss - tradingFee;
+                treasuryManager.collectFee(order.trader, tradingFee);
                 treasuryManager.refundCollateral(order.trader, netAmount);
             }
         } else {
-            if (position.collateral > tradingFee + executionFeePaid) {
-                uint256 netAmount = position.collateral - tradingFee - executionFeePaid;
+            if (position.collateral > tradingFee) {
+                uint256 netAmount = position.collateral - tradingFee;
+                treasuryManager.collectFee(order.trader, tradingFee);
                 treasuryManager.refundCollateral(order.trader, netAmount);
             }
         }
 
-        // Pay keeper
-        treasuryManager.payKeeperFee(msg.sender, executionFeePaid);
-
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
-        order.executionFeePaid = executionFeePaid;
 
-        emit LimitOrderExecuted(orderId, order.positionId, msg.sender, signedPrice.price, executionFeePaid);
+        emit LimitOrderExecuted(orderId, order.positionId, msg.sender, signedPrice.price);
     }
 
     /**
@@ -494,7 +463,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         address trader,
         uint256 positionId,
         uint256 triggerPrice,
-        uint256 maxExecutionFee,
         uint256 nonce,
         uint256 expiresAt,
         bytes calldata userSignature
@@ -502,7 +470,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(triggerPrice > 0, "Invalid trigger price");
         require(block.timestamp < expiresAt, "Order expired");
         require(nonce == userOrderNonces[trader], "Invalid nonce");
-        require(maxExecutionFee > 0, "Invalid max execution fee");
 
         IPositionManager.Position memory position = positionManager.getPosition(positionId);
         require(position.trader == trader, "Not position owner");
@@ -514,7 +481,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
                 trader,
                 positionId,
                 triggerPrice,
-                maxExecutionFee,
                 nonce,
                 expiresAt,
                 address(this),
@@ -543,9 +509,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
             createdAt: block.timestamp,
             executedAt: 0,
             expiresAt: expiresAt,
-            nonce: nonce,
-            maxExecutionFee: maxExecutionFee,
-            executionFeePaid: 0
+            nonce: nonce
         });
 
         userOrders[trader].push(orderId);
@@ -554,9 +518,9 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Execute stop loss order
+     * @notice Execute stop loss order - Trading fee (0.05%) charged on close
      */
-    function executeStopLossOrder(uint256 orderId, SignedPrice calldata signedPrice, uint256 executionFeePaid)
+    function executeStopLossOrder(uint256 orderId, SignedPrice calldata signedPrice)
         external
         onlyRole(KEEPER_ROLE)
         nonReentrant
@@ -568,8 +532,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(order.status == OrderStatus.PENDING, "Order not pending");
         require(order.orderType == OrderType.STOP_LOSS, "Not stop loss");
         require(block.timestamp < order.expiresAt, "Order expired");
-        require(executionFeePaid > 0, "Execution fee required");
-        require(executionFeePaid <= order.maxExecutionFee, "Execution fee above max");
 
         _verifySignedPrice(signedPrice);
 
@@ -586,31 +548,32 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Close position
         int256 pnl = positionManager.closePosition(order.positionId, signedPrice.price);
 
-        // Settle (same as limit close)
-        uint256 tradingFee = (position.size * tradingFeeBps) / 10000;
+        // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
+        uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
+        // Settle with trading fee deduction (same as limit close)
         if (pnl > 0) {
             uint256 profit = uint256(pnl);
-            uint256 netAmount = position.collateral + profit - tradingFee - executionFeePaid;
+            uint256 netAmount = position.collateral + profit - tradingFee;
+            treasuryManager.collectFee(order.trader, tradingFee);
             treasuryManager.refundCollateral(order.trader, netAmount);
         } else if (pnl < 0) {
             uint256 loss = uint256(-pnl);
-            if (position.collateral > loss + tradingFee + executionFeePaid) {
-                uint256 netAmount = position.collateral - loss - tradingFee - executionFeePaid;
+            if (position.collateral > loss + tradingFee) {
+                uint256 netAmount = position.collateral - loss - tradingFee;
+                treasuryManager.collectFee(order.trader, tradingFee);
                 treasuryManager.refundCollateral(order.trader, netAmount);
             }
         } else {
-            if (position.collateral > tradingFee + executionFeePaid) {
-                uint256 netAmount = position.collateral - tradingFee - executionFeePaid;
+            if (position.collateral > tradingFee) {
+                uint256 netAmount = position.collateral - tradingFee;
+                treasuryManager.collectFee(order.trader, tradingFee);
                 treasuryManager.refundCollateral(order.trader, netAmount);
             }
         }
 
-        treasuryManager.payKeeperFee(msg.sender, executionFeePaid);
-
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
-        order.executionFeePaid = executionFeePaid;
 
         emit StopLossTriggered(orderId, order.positionId, msg.sender, signedPrice.price, pnl);
     }

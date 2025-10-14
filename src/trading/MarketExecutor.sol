@@ -97,8 +97,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bool isLong,
         uint256 collateral,
         uint256 leverage,
-        uint256 price,
-        uint256 fee
+        uint256 price
     );
 
     event PositionClosedMarket(
@@ -172,20 +171,20 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
 
         // Calculate trading fee
         uint256 positionSize = collateral * leverage;
-        uint256 fee = (positionSize * tradingFeeBps) / 10000;
+        uint256 fee = (positionSize * tradingFeeBps) / 100000;
 
         // Collect collateral + fee from trader
         require(
-            usdc.transferFrom(msg.sender, address(treasuryManager), collateral + fee), "MarketExecutor: Transfer failed"
+            usdc.transferFrom(msg.sender, address(treasuryManager), collateral), "MarketExecutor: Transfer failed"
         );
 
         // Collect fee to treasury
-        treasuryManager.collectFee(msg.sender, fee);
+        // treasuryManager.collectFee(msg.sender, fee);
 
         // Create position via PositionManager
         positionId = positionManager.createPosition(msg.sender, symbol, isLong, collateral, leverage, signedPrice.price);
 
-        emit MarketOrderExecuted(positionId, msg.sender, symbol, isLong, collateral, leverage, signedPrice.price, fee);
+        emit MarketOrderExecuted(positionId, msg.sender, symbol, isLong, collateral, leverage, signedPrice.price);
     }
 
     /**
@@ -230,21 +229,21 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
 
         // Calculate trading fee
         uint256 positionSize = collateral * leverage;
-        uint256 fee = (positionSize * tradingFeeBps) / 10000;
+        // uint256 fee = (positionSize * tradingFeeBps) / 10000;
 
         // Collect collateral + fee from TRADER (not relayer!)
         require(
-            usdc.transferFrom(trader, address(treasuryManager), collateral + fee), "MarketExecutor: Transfer failed"
+            usdc.transferFrom(trader, address(treasuryManager), collateral), "MarketExecutor: Transfer failed"
         );
 
         // Collect fee to treasury
-        treasuryManager.collectFee(trader, fee);
+        // treasuryManager.collectFee(trader, fee);
 
         // Create position via PositionManager (use trader address, not msg.sender)
         positionId = positionManager.createPosition(trader, symbol, isLong, collateral, leverage, signedPrice.price);
 
         emit MetaTransactionExecuted(trader, msg.sender, metaNonces[trader] - 1);
-        emit MarketOrderExecuted(positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, fee);
+        emit MarketOrderExecuted(positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price);
     }
 
     /**
@@ -268,7 +267,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         int256 pnl = positionManager.closePosition(positionId, signedPrice.price);
 
         // Calculate trading fee
-        uint256 fee = (size * tradingFeeBps) / 10000;
+        uint256 fee = (size * tradingFeeBps) / 100000;
 
         // Settlement logic - FIXED and simplified
         // Calculate net amount: collateral + PnL - fee
@@ -342,7 +341,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         int256 pnl = positionManager.closePosition(positionId, signedPrice.price);
 
         // Calculate trading fee
-        uint256 fee = (size * tradingFeeBps) / 10000;
+        uint256 fee = (size * tradingFeeBps) / 100000;
 
         // Settlement logic - FIXED and simplified
         // Calculate net amount: collateral + PnL - fee

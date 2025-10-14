@@ -137,6 +137,31 @@ contract RiskManagerTest is Test {
     }
 
     // ====================
+    // TRADE VALIDATION TESTS
+    // ====================
+
+    function testValidateTradeValid() public {
+        bool valid = riskManager.validateTrade(trader, "BTC", 10, 1_000 * 10 ** 6, true);
+        assertTrue(valid, "Valid trade should pass");
+    }
+
+    function testValidateTradeInvalidCollateral() public {
+        bool valid = riskManager.validateTrade(trader, "BTC", 10, 0, true);
+        assertFalse(valid, "Zero collateral should fail");
+    }
+
+    function testValidateTradeInvalidLeverage() public {
+        bool valid = riskManager.validateTrade(trader, "BTC", 101, 1_000 * 10 ** 6, true);
+        assertFalse(valid, "Leverage over limit should fail");
+    }
+
+    function testValidateTradeMaxOpenInterestExceeded() public {
+        riskManager.increaseOpenInterest("BTC", 1_000_000 * 10 ** 6);
+        bool valid = riskManager.validateTrade(trader, "BTC", 10, 1_000 * 10 ** 6, true);
+        assertFalse(valid, "Open interest cap should prevent trade");
+    }
+
+    // ====================
     // LIQUIDATION TESTS
     // ====================
 
@@ -204,6 +229,28 @@ contract RiskManagerTest is Test {
         );
 
         assertFalse(shouldLiquidate);
+    }
+
+    function testShouldLiquidateTriggersAtNinetyNinePercentLoss() public view {
+        uint256 collateral = 1_000 * 10 ** 6;
+        uint256 leverage = 10;
+        uint256 entryPrice = 50_000 * 10 ** 8;
+        uint256 size = collateral * leverage;
+        uint256 currentPrice = entryPrice / 50; // massive drop >99%
+
+        bool shouldLiquidate = riskManager.shouldLiquidate(1, currentPrice, collateral, size, entryPrice, true);
+        assertTrue(shouldLiquidate, "Loss beyond 99% should trigger liquidation");
+    }
+
+    function testShouldLiquidateRespectsBuffer() public view {
+        uint256 collateral = 1_000 * 10 ** 6;
+        uint256 leverage = 10;
+        uint256 entryPrice = 50_000 * 10 ** 8;
+        uint256 size = collateral * leverage;
+        uint256 currentPrice = (entryPrice * 30) / 100; // 70% drop < 99%
+
+        bool shouldLiquidate = riskManager.shouldLiquidate(1, currentPrice, collateral, size, entryPrice, true);
+        assertFalse(shouldLiquidate, "Loss below 99% should not liquidate");
     }
 
     // ====================

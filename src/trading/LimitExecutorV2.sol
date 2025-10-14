@@ -168,6 +168,8 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     );
 
     event TradingFeeUpdated(uint256 tradingFeeBps);
+    event BadDebtCovered(address indexed trader, uint256 excessLoss, uint256 totalLoss);
+    event TotalLiquidation(address indexed trader, uint256 collateral);
 
     constructor(
         address _usdc,
@@ -429,26 +431,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
         uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
-        // Settle with trading fee deduction
-        if (pnl > 0) {
-            uint256 profit = uint256(pnl);
-            uint256 netAmount = position.collateral + profit - tradingFee;
-            treasuryManager.collectFee(order.trader, tradingFee);
-            treasuryManager.refundCollateral(order.trader, netAmount);
-        } else if (pnl < 0) {
-            uint256 loss = uint256(-pnl);
-            if (position.collateral > loss + tradingFee) {
-                uint256 netAmount = position.collateral - loss - tradingFee;
-                treasuryManager.collectFee(order.trader, tradingFee);
-                treasuryManager.refundCollateral(order.trader, netAmount);
-            }
-        } else {
-            if (position.collateral > tradingFee) {
-                uint256 netAmount = position.collateral - tradingFee;
-                treasuryManager.collectFee(order.trader, tradingFee);
-                treasuryManager.refundCollateral(order.trader, netAmount);
-            }
-        }
+        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee);
 
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
@@ -551,26 +534,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
         uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
-        // Settle with trading fee deduction (same as limit close)
-        if (pnl > 0) {
-            uint256 profit = uint256(pnl);
-            uint256 netAmount = position.collateral + profit - tradingFee;
-            treasuryManager.collectFee(order.trader, tradingFee);
-            treasuryManager.refundCollateral(order.trader, netAmount);
-        } else if (pnl < 0) {
-            uint256 loss = uint256(-pnl);
-            if (position.collateral > loss + tradingFee) {
-                uint256 netAmount = position.collateral - loss - tradingFee;
-                treasuryManager.collectFee(order.trader, tradingFee);
-                treasuryManager.refundCollateral(order.trader, netAmount);
-            }
-        } else {
-            if (position.collateral > tradingFee) {
-                uint256 netAmount = position.collateral - tradingFee;
-                treasuryManager.collectFee(order.trader, tradingFee);
-                treasuryManager.refundCollateral(order.trader, netAmount);
-            }
-        }
+        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee);
 
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
@@ -642,4 +606,73 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         if (_positionManager != address(0)) positionManager = IPositionManager(_positionManager);
         if (_treasuryManager != address(0)) treasuryManager = ITreasuryManager(_treasuryManager);
     }
+
+    /**
+     * @notice Settle position with isolated margin rules
+     * @dev Max loss CAPPED at 99% of collateral
+     *      If actual loss > 99%, settlement uses 99% and protocol covers difference
+     *      User always gets ~1% back (better UX)
+     */
+    function _settleIsolatedMargin(
+        address trader,
+        uint256 collateral,
+        int256 pnl,
+        uint256 tradingFee
+    ) internal {
+        int256 maxAllowedLoss = -int256((collateral * 9900) / 10000); // -99% of collateral
+
+        int256 cappedPnl = pnl;
+        bool isOverloss = false;
+
+        // If loss exceeds 99%, cap it at 99%
+        if (pnl < maxAllowedLoss) {
+            cappedPnl = maxAllowedLoss;
+            isOverloss = true;
+
+            // Log the bad debt (protocol covers the excess)
+            uint256 excessLoss = uint256(-pnl) - uint256(-maxAllowedLoss);
+            emit BadDebtCovered(trader, excessLoss, uint256(-pnl));
+        }
+
+        // Calculate net amount with CAPPED pnl
+        int256 netAmount = int256(collateral) + cappedPnl - int256(tradingFee);
+
+        if (netAmount <= 0) {
+            // Loss >= 99% (after capping)
+            uint256 loss = uint256(-cappedPnl);
+
+            if (loss >= collateral) {
+                // Total wipeout - shouldn't happen with 99% cap, but safety check
+                emit TotalLiquidation(trader, collateral);
+                // No refund
+            } else {
+                // Partial loss (should be exactly 99%)
+                uint256 remaining = collateral - loss; // Should be ~1% of collateral
+
+                if (remaining >= tradingFee) {
+                    // Take fee from remaining
+                    treasuryManager.collectFee(trader, tradingFee);
+                    uint256 refund = remaining - tradingFee;
+
+                    if (refund > 0) {
+                        // Refund ~1% minus fee to user
+                        treasuryManager.refundCollateral(trader, refund);
+                    }
+                } else {
+                    // Remaining < fee, just refund all (waive fee for dust amounts)
+                    if (remaining > 0) {
+                        treasuryManager.refundCollateral(trader, remaining);
+                    }
+                }
+            }
+
+        } else {
+            // Normal case: profit or small loss
+            uint256 refundAmount = uint256(netAmount);
+
+            treasuryManager.collectFee(trader, tradingFee);
+            treasuryManager.refundCollateral(trader, refundAmount);
+        }
+    }
 }
+

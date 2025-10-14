@@ -163,7 +163,7 @@ contract RiskManager is Ownable {
         uint256 collateral,
         uint256 size,
         string calldata symbol
-    ) external view returns (bool shouldLiquidate) {
+    ) external view returns (bool) {
         uint256 liquidationPrice = this.calculateLiquidationPrice(isLong, entryPrice, collateral, size, symbol);
 
         if (isLong) {
@@ -250,12 +250,7 @@ contract RiskManager is Ownable {
         uint256 entryPrice,
         bool isLong
     ) external view returns (bool) {
-        // For now, we need to know the symbol to get liquidation threshold
-        // Since we don't have symbol in this signature, we'll use a default
-        // In production, you'd query PositionManager for the symbol
-        // For testing, we'll use "BTC" as default
-
-        // Calculate PnL percentage
+        // Calculate PnL
         int256 priceDiff;
         if (isLong) {
             priceDiff = int256(currentPrice) - int256(entryPrice);
@@ -263,15 +258,16 @@ contract RiskManager is Ownable {
             priceDiff = int256(entryPrice) - int256(currentPrice);
         }
 
-        // Calculate loss in collateral terms
-        // loss = (priceDiff * size) / entryPrice
         int256 pnl = (priceDiff * int256(size)) / int256(entryPrice);
 
-        // If loss, check if it exceeds liquidation threshold (75% = 7500 bps)
+        // Check if loss
         if (pnl < 0) {
             uint256 loss = uint256(-pnl);
-            // Liquidate if loss >= 75% of collateral
-            uint256 liquidationThreshold = (collateral * 7500) / 10000;
+
+            // ✅ LIQUIDATE AT 99% OF COLLATERAL
+            // Gives 1% buffer for fees and user refund
+            uint256 liquidationThreshold = (collateral * 9900) / 10000; // 99%
+
             return loss >= liquidationThreshold;
         }
 

@@ -111,6 +111,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
     event FeesUpdated(uint256 tradingFeeBps, uint256 liquidationFeeBps);
 
     event MetaTransactionExecuted(address indexed userAddress, address indexed relayerAddress, uint256 nonce);
+    event BadDebtCovered(address indexed trader, uint256 excessLoss, uint256 totalLoss);
+    event TotalLiquidation(address indexed trader, uint256 collateral);
 
     /**
      * @notice Signed price data structure
@@ -269,34 +271,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         // Calculate trading fee
         uint256 fee = (size * tradingFeeBps) / 100000;
 
-        // Settlement logic - FIXED and simplified
-        // Calculate net amount: collateral + PnL - fee
-        int256 netAmount = int256(collateral) + pnl - int256(fee);
-
-        require(netAmount >= 0, "MarketExecutor: Loss exceeds collateral after fee");
-
-        // Record fee for accounting (no actual transfer needed - fee stays in treasury)
-        treasuryManager.collectFee(trader, fee);
-
-        // Refund net amount to trader (collateral + pnl - fee)
-        uint256 refundAmount = uint256(netAmount);
-
-        if (pnl > 0) {
-            // Profit: need to pay from liquidity pool
-            uint256 profit = uint256(pnl);
-
-            // Refund collateral first (from treasury balance)
-            treasuryManager.refundCollateral(trader, collateral);
-
-            // Pay profit minus fee from liquidity pool
-            // Net profit = profit - fee (fee already deducted in netAmount calc)
-            if (profit > fee) {
-                treasuryManager.distributeProfit(trader, profit - fee);
-            }
-        } else {
-            // Loss or break-even: refund net amount (already includes fee deduction)
-            treasuryManager.refundCollateral(trader, refundAmount);
-        }
+        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap
+        _settleIsolatedMargin(trader, collateral, pnl, fee);
 
         emit PositionClosedMarket(positionId, trader, signedPrice.price, pnl, fee);
     }
@@ -343,34 +319,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         // Calculate trading fee
         uint256 fee = (size * tradingFeeBps) / 100000;
 
-        // Settlement logic - FIXED and simplified
-        // Calculate net amount: collateral + PnL - fee
-        int256 netAmount = int256(collateral) + pnl - int256(fee);
-
-        require(netAmount >= 0, "MarketExecutor: Loss exceeds collateral after fee");
-
-        // Record fee for accounting (no actual transfer needed - fee stays in treasury)
-        treasuryManager.collectFee(trader, fee);
-
-        // Refund net amount to trader (collateral + pnl - fee)
-        uint256 refundAmount = uint256(netAmount);
-
-        if (pnl > 0) {
-            // Profit: need to pay from liquidity pool
-            uint256 profit = uint256(pnl);
-
-            // Refund collateral first (from treasury balance)
-            treasuryManager.refundCollateral(trader, collateral);
-
-            // Pay profit minus fee from liquidity pool
-            // Net profit = profit - fee (fee already deducted in netAmount calc)
-            if (profit > fee) {
-                treasuryManager.distributeProfit(trader, profit - fee);
-            }
-        } else {
-            // Loss or break-even: refund net amount (already includes fee deduction)
-            treasuryManager.refundCollateral(trader, refundAmount);
-        }
+        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap
+        _settleIsolatedMargin(trader, collateral, pnl, fee);
 
         emit MetaTransactionExecuted(trader, msg.sender, metaNonces[trader] - 1);
         emit PositionClosedMarket(positionId, trader, signedPrice.price, pnl, fee);
@@ -433,27 +383,27 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         require(signedPrice.price > 0, "MarketExecutor: Invalid price");
 
         // Original validation (commented out for now):
-        // require(
-        //     block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW,
-        //     "MarketExecutor: Price expired"
-        // );
-        // require(
-        //     signedPrice.timestamp <= block.timestamp,
-        //     "MarketExecutor: Price timestamp in future"
-        // );
-        // bytes32 messageHash = keccak256(
-        //     abi.encodePacked(
-        //         signedPrice.symbol,
-        //         signedPrice.price,
-        //         signedPrice.timestamp
-        //     )
-        // );
-        // bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
-        // address signer = ethSignedMessageHash.recover(signedPrice.signature);
-        // require(
-        //     hasRole(BACKEND_SIGNER_ROLE, signer),
-        //     "MarketExecutor: Invalid signature"
-        // );
+        require(
+            block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW,
+            "MarketExecutor: Price expired"
+        );
+        require(
+            signedPrice.timestamp <= block.timestamp,
+            "MarketExecutor: Price timestamp in future"
+        );
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                signedPrice.symbol,
+                signedPrice.price,
+                signedPrice.timestamp
+            )
+        );
+        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+        address signer = ethSignedMessageHash.recover(signedPrice.signature);
+        require(
+            hasRole(BACKEND_SIGNER_ROLE, signer),
+            "MarketExecutor: Invalid signature"
+        );
     }
 
     /**
@@ -481,5 +431,55 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         if (_riskManager != address(0)) riskManager = IRiskManager(_riskManager);
         if (_positionManager != address(0)) positionManager = IPositionManager(_positionManager);
         if (_treasuryManager != address(0)) treasuryManager = ITreasuryManager(_treasuryManager);
+    }
+    
+    /**
+     * @notice Settle position with isolated margin rules
+     * @dev Max loss CAPPED at 99% of collateral
+     */
+    function _settleIsolatedMargin(
+        address trader,
+        uint256 collateral,
+        int256 pnl,
+        uint256 tradingFee
+    ) internal {
+        // ✅ CAP LOSS AT 99%
+        int256 maxAllowedLoss = -int256((collateral * 9900) / 10000);
+
+        int256 cappedPnl = pnl;
+
+        if (pnl < maxAllowedLoss) {
+            cappedPnl = maxAllowedLoss;
+            uint256 excessLoss = uint256(-pnl) - uint256(-maxAllowedLoss);
+            emit BadDebtCovered(trader, excessLoss, uint256(-pnl));
+        }
+
+        int256 netAmount = int256(collateral) + cappedPnl - int256(tradingFee);
+
+        if (netAmount <= 0) {
+            uint256 loss = uint256(-cappedPnl);
+
+            if (loss >= collateral) {
+                emit TotalLiquidation(trader, collateral);
+            } else {
+                uint256 remaining = collateral - loss;
+
+                if (remaining >= tradingFee) {
+                    treasuryManager.collectFee(trader, tradingFee);
+                    uint256 refund = remaining - tradingFee;
+                    if (refund > 0) {
+                        treasuryManager.refundCollateral(trader, refund);
+                    }
+                } else {
+                    if (remaining > 0) {
+                        treasuryManager.refundCollateral(trader, remaining);
+                    }
+                }
+            }
+
+        } else {
+            treasuryManager.collectFee(trader, tradingFee);
+            treasuryManager.refundCollateral(trader, uint256(netAmount));
+        }
     }
 }

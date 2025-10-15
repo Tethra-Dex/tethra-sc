@@ -59,6 +59,7 @@ interface IPositionManager {
 
 interface ITreasuryManager {
     function collectFee(address from, uint256 amount) external;
+    function collectFeeWithRelayerSplit(address from, address relayer, uint256 totalFeeAmount) external;
     function distributeProfit(address to, uint256 amount) external;
     function refundCollateral(address to, uint256 amount) external;
 }
@@ -325,7 +326,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Cancel pending order - USER ONLY
+     * @notice Cancel pending order - USER ONLY (requires gas from user)
      * @param orderId Order ID to cancel
      */
     function cancelOrder(uint256 orderId) external nonReentrant {
@@ -341,6 +342,48 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         cancelledOrders[orderId] = true;
 
         emit LimitOrderCancelled(orderId, msg.sender);
+    }
+
+    /**
+     * @notice Cancel pending order - GASLESS VERSION (keeper pays gas)
+     * @dev User signs message off-chain, keeper submits transaction
+     * @param trader User address
+     * @param orderId Order ID to cancel
+     * @param nonce User's current nonce
+     * @param userSignature User's signature authorizing cancellation
+     */
+    function cancelOrderGasless(
+        address trader,
+        uint256 orderId,
+        uint256 nonce,
+        bytes calldata userSignature
+    ) external onlyRole(KEEPER_ROLE) nonReentrant {
+        Order storage order = orders[orderId];
+
+        require(order.id != 0, "Order not found");
+        require(order.trader == trader, "Not order owner");
+        require(order.status == OrderStatus.PENDING, "Order not pending");
+        require(!cancelledOrders[orderId], "Already cancelled");
+        require(nonce == userOrderNonces[trader], "Invalid nonce");
+
+        // Verify user signature
+        // Message format: trader, orderId, nonce, contract address, "CANCEL"
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(trader, orderId, nonce, address(this), "CANCEL")
+        );
+
+        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+        address signer = ethSignedMessageHash.recover(userSignature);
+        require(signer == trader, "Invalid signature");
+
+        // Increment nonce to prevent replay attacks
+        userOrderNonces[trader]++;
+
+        // Mark as cancelled
+        order.status = OrderStatus.CANCELLED;
+        cancelledOrders[orderId] = true;
+
+        emit LimitOrderCancelled(orderId, trader);
     }
 
     /**
@@ -431,7 +474,8 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
         uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
-        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee);
+        // msg.sender is the keeper (relayer) executing the order
+        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee, msg.sender);
 
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
@@ -534,7 +578,8 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Calculate trading fee (0.05% of position size) - FIXED: use /100000 not /10000
         uint256 tradingFee = (position.size * tradingFeeBps) / 100000;
 
-        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee);
+        // msg.sender is the keeper (relayer) executing the order
+        _settleIsolatedMargin(order.trader, position.collateral, pnl, tradingFee, msg.sender);
 
         order.status = OrderStatus.EXECUTED;
         order.executedAt = block.timestamp;
@@ -612,12 +657,14 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
      * @dev Max loss CAPPED at 99% of collateral
      *      If actual loss > 99%, settlement uses 99% and protocol covers difference
      *      User always gets ~1% back (better UX)
+     * @dev Fee split: 0.01% to relayer, 0.04% to treasury
      */
     function _settleIsolatedMargin(
         address trader,
         uint256 collateral,
         int256 pnl,
-        uint256 tradingFee
+        uint256 tradingFee,
+        address relayer
     ) internal {
         int256 maxAllowedLoss = -int256((collateral * 9900) / 10000); // -99% of collateral
 
@@ -650,8 +697,8 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
                 uint256 remaining = collateral - loss; // Should be ~1% of collateral
 
                 if (remaining >= tradingFee) {
-                    // Take fee from remaining
-                    treasuryManager.collectFee(trader, tradingFee);
+                    // Take fee from remaining with relayer split
+                    treasuryManager.collectFeeWithRelayerSplit(trader, relayer, tradingFee);
                     uint256 refund = remaining - tradingFee;
 
                     if (refund > 0) {
@@ -670,7 +717,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
             // Normal case: profit or small loss
             uint256 refundAmount = uint256(netAmount);
 
-            treasuryManager.collectFee(trader, tradingFee);
+            treasuryManager.collectFeeWithRelayerSplit(trader, relayer, tradingFee);
             treasuryManager.refundCollateral(trader, refundAmount);
         }
     }

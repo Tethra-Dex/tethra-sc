@@ -56,6 +56,7 @@ interface IPositionManager {
 
 interface ITreasuryManager {
     function collectFee(address from, uint256 amount) external;
+    function collectFeeWithRelayerSplit(address from, address relayer, uint256 totalFeeAmount) external;
     function distributeProfit(address to, uint256 amount) external;
     function refundCollateral(address to, uint256 amount) external;
 }
@@ -271,8 +272,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         // Calculate trading fee
         uint256 fee = (size * tradingFeeBps) / 100000;
 
-        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap
-        _settleIsolatedMargin(trader, collateral, pnl, fee);
+        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap (msg.sender is the relayer)
+        _settleIsolatedMargin(trader, collateral, pnl, fee, msg.sender);
 
         emit PositionClosedMarket(positionId, trader, signedPrice.price, pnl, fee);
     }
@@ -319,8 +320,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         // Calculate trading fee
         uint256 fee = (size * tradingFeeBps) / 100000;
 
-        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap
-        _settleIsolatedMargin(trader, collateral, pnl, fee);
+        // ✅ ISOLATED MARGIN SETTLEMENT with 99% loss cap (msg.sender is the relayer)
+        _settleIsolatedMargin(trader, collateral, pnl, fee, msg.sender);
 
         emit MetaTransactionExecuted(trader, msg.sender, metaNonces[trader] - 1);
         emit PositionClosedMarket(positionId, trader, signedPrice.price, pnl, fee);
@@ -436,12 +437,14 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
     /**
      * @notice Settle position with isolated margin rules
      * @dev Max loss CAPPED at 99% of collateral
+     * @dev Fee split: 0.01% to relayer, 0.04% to treasury
      */
     function _settleIsolatedMargin(
         address trader,
         uint256 collateral,
         int256 pnl,
-        uint256 tradingFee
+        uint256 tradingFee,
+        address relayer
     ) internal {
         // ✅ CAP LOSS AT 99%
         int256 maxAllowedLoss = -int256((collateral * 9900) / 10000);
@@ -465,7 +468,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
                 uint256 remaining = collateral - loss;
 
                 if (remaining >= tradingFee) {
-                    treasuryManager.collectFee(trader, tradingFee);
+                    treasuryManager.collectFeeWithRelayerSplit(trader, relayer, tradingFee);
                     uint256 refund = remaining - tradingFee;
                     if (refund > 0) {
                         treasuryManager.refundCollateral(trader, refund);
@@ -478,7 +481,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
             }
 
         } else {
-            treasuryManager.collectFee(trader, tradingFee);
+            treasuryManager.collectFeeWithRelayerSplit(trader, relayer, tradingFee);
             treasuryManager.refundCollateral(trader, uint256(netAmount));
         }
     }

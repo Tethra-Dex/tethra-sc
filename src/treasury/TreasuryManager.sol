@@ -39,6 +39,7 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
     uint256 public totalProfitsDistributed;
     uint256 public totalCollateralRefunded;
     uint256 public totalKeeperFeesPaid;
+    uint256 public totalRelayerFeesPaid;
 
     // Events
     event FeeCollected(address indexed from, uint256 amount, uint256 timestamp);
@@ -50,6 +51,10 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
     event ProfitDistributed(address indexed to, uint256 amount, uint256 timestamp);
 
     event KeeperFeePaid(address indexed keeper, uint256 amount, uint256 timestamp);
+
+    event RelayerFeePaid(address indexed relayer, uint256 amount, uint256 timestamp);
+
+    event FeeCollectedWithSplit(address indexed from, uint256 totalAmount, uint256 relayerAmount, uint256 treasuryAmount, uint256 timestamp);
 
     event LiquidityAdded(address indexed provider, uint256 amount, uint256 timestamp);
 
@@ -85,6 +90,40 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
         totalFeesCollected += amount;
 
         emit FeeCollected(from, amount, block.timestamp);
+    }
+
+    /**
+     * @notice Collect trading fee with relayer split
+     * @dev Splits fee: 20% to relayer (0.01% of size), 80% to treasury (0.04% of size)
+     * @param from Trader address (for event tracking)
+     * @param relayer Relayer address to receive their portion
+     * @param totalFeeAmount Total fee amount (0.05% of position size)
+     */
+    function collectFeeWithRelayerSplit(address from, address relayer, uint256 totalFeeAmount)
+        external
+        onlyRole(EXECUTOR_ROLE)
+        nonReentrant
+    {
+        require(totalFeeAmount > 0, "TreasuryManager: Invalid amount");
+        require(relayer != address(0), "TreasuryManager: Invalid relayer");
+
+        // Split: 20% to relayer, 80% to treasury
+        // 0.01% / 0.05% = 20%
+        uint256 relayerAmount = (totalFeeAmount * 2000) / 10000; // 20%
+        uint256 treasuryAmount = totalFeeAmount - relayerAmount; // 80%
+
+        // Add treasury portion to fees
+        totalFees += treasuryAmount;
+        totalFeesCollected += treasuryAmount;
+
+        // Track relayer fees
+        totalRelayerFeesPaid += relayerAmount;
+
+        // Pay relayer immediately
+        usdc.safeTransfer(relayer, relayerAmount);
+
+        emit FeeCollectedWithSplit(from, totalFeeAmount, relayerAmount, treasuryAmount, block.timestamp);
+        emit RelayerFeePaid(relayer, relayerAmount, block.timestamp);
     }
 
     /**
@@ -293,13 +332,20 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
      * @return profitsDistributed Total profits paid to traders
      * @return collateralRefunded Total collateral refunded
      * @return keeperFeesPaid Total fees paid to keepers
+     * @return relayerFeesPaid Total fees paid to relayers
      */
     function getStatistics()
         external
         view
-        returns (uint256 feesCollected, uint256 profitsDistributed, uint256 collateralRefunded, uint256 keeperFeesPaid)
+        returns (
+            uint256 feesCollected,
+            uint256 profitsDistributed,
+            uint256 collateralRefunded,
+            uint256 keeperFeesPaid,
+            uint256 relayerFeesPaid
+        )
     {
-        return (totalFeesCollected, totalProfitsDistributed, totalCollateralRefunded, totalKeeperFeesPaid);
+        return (totalFeesCollected, totalProfitsDistributed, totalCollateralRefunded, totalKeeperFeesPaid, totalRelayerFeesPaid);
     }
 
     /**

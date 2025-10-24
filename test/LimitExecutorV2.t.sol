@@ -142,7 +142,9 @@ contract LimitExecutorV2Test is Test {
 
         // Fee split: 20% to relayer, 80% to treasury
         uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
-        assertEq(treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not accounted for in treasury");
+        assertEq(
+            treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not accounted for in treasury"
+        );
     }
 
     function testStopLossCapsLossAtNinetyNinePercent() public {
@@ -196,7 +198,9 @@ contract LimitExecutorV2Test is Test {
 
         // Fee split: 20% to relayer, 80% to treasury
         uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
-        assertEq(treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not collected on stop loss");
+        assertEq(
+            treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not collected on stop loss"
+        );
     }
 
     // -------------------------------------------------------------------------

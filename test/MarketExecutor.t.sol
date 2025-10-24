@@ -210,7 +210,11 @@ contract MarketExecutorTest is Test {
         assertEq(treasury.totalFeesCollected(), expectedTreasuryFee, "Trading fee accounting mismatch");
         // Treasury outflow = refund to trader + relayer fee
         uint256 relayerFee = (tradingFee * 2000) / 10000;
-        assertEq(treasuryBalanceBefore - usdc.balanceOf(address(treasury)), expectedRefund + relayerFee, "Treasury outflow mismatch");
+        assertEq(
+            treasuryBalanceBefore - usdc.balanceOf(address(treasury)),
+            expectedRefund + relayerFee,
+            "Treasury outflow mismatch"
+        );
     }
 
     function testSettlementCapsLossAtNinetyNinePercent() public {

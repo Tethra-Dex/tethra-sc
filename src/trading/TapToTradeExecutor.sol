@@ -245,6 +245,48 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
     }
 
     /**
+     * @notice Execute tap-to-trade order WITHOUT signature verification (keeper-only)
+     * @dev This allows fully gasless execution where backend validates signatures off-chain
+     * @param trader The actual trader address
+     * @param symbol Asset symbol (BTC, ETH, etc)
+     * @param isLong True for long, false for short
+     * @param collateral Collateral amount in USDC (6 decimals)
+     * @param leverage Leverage multiplier
+     * @param signedPrice Backend-signed price data
+     */
+    function executeTapToTradeByKeeper(
+        address trader,
+        string calldata symbol,
+        bool isLong,
+        uint256 collateral,
+        uint256 leverage,
+        SignedPrice calldata signedPrice
+    ) external nonReentrant onlyRole(KEEPER_ROLE) returns (uint256 positionId) {
+        // Skip nonce increment - keeper executes without meta-transaction
+        // No signature verification needed - keeper is trusted
+
+        // Verify price signature and freshness
+        _verifySignedPrice(signedPrice);
+
+        // Validate trade parameters via RiskManager
+        require(
+            riskManager.validateTrade(trader, symbol, leverage, collateral, isLong),
+            "TapToTradeExecutor: Trade validation failed"
+        );
+
+        // Collect collateral from TRADER (not keeper!)
+        require(
+            usdc.transferFrom(trader, address(treasuryManager), collateral),
+            "TapToTradeExecutor: Transfer failed"
+        );
+
+        // Create position via PositionManager (use trader address)
+        positionId = positionManager.createPosition(trader, symbol, isLong, collateral, leverage, signedPrice.price);
+
+        emit TapToTradeOrderExecuted(positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, msg.sender);
+    }
+
+    /**
      * @notice Verify backend-signed price data
      * @param signedPrice Signed price data from backend
      */

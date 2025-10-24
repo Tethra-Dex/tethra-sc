@@ -289,18 +289,9 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant {
         // Get position details first to get symbol for signature verification
-        (
-            ,
-            address positionTrader,
-            string memory symbol,
-            bool isLong,
-            uint256 collateral,
-            uint256 size,
-            ,
-            ,
-            ,
-            uint8 status
-        ) = positionManager.getPosition(positionId);
+        (,, string memory symbol, bool isLong, uint256 collateral, uint256 size,,,, uint8 status) =
+            positionManager.getPosition(positionId);
+        (, address positionTrader,,,,,,,,) = positionManager.getPosition(positionId);
 
         // Verify user signature
         bytes32 messageHash = keccak256(abi.encodePacked(trader, positionId, metaNonces[trader], address(this)));

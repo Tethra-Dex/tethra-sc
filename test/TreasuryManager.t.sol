@@ -554,8 +554,13 @@ contract TreasuryManagerTest is Test {
         vm.prank(executor);
         treasury.distributeProfit(trader2, 100e6);
 
-        (uint256 feesCollected, uint256 profitsDistributed, uint256 collateralRefunded, uint256 keeperFeesPaid) =
-            treasury.getStatistics();
+        (
+            uint256 feesCollected,
+            uint256 profitsDistributed,
+            uint256 collateralRefunded,
+            uint256 keeperFeesPaid,
+            uint256 relayerFeesPaid
+        ) = treasury.getStatistics();
 
         assertEq(feesCollected, 1000e6);
         assertEq(profitsDistributed, 100e6);

@@ -33,6 +33,14 @@ contract TreasuryManagerMock is ITreasuryManager {
         feesByTrader[from] += amount;
     }
 
+    function collectFeeWithRelayerSplit(address from, address relayer, uint256 totalFeeAmount) external override {
+        uint256 relayerAmount = (totalFeeAmount * 2000) / 10000;
+        uint256 treasuryAmount = totalFeeAmount - relayerAmount;
+        totalFeesCollected += treasuryAmount;
+        feesByTrader[from] += treasuryAmount;
+        require(usdc.transfer(relayer, relayerAmount), "relayer payment failed");
+    }
+
     function distributeProfit(address to, uint256 amount) external override {
         totalDistributed += amount;
         distributionByAccount[to] += amount;
@@ -56,7 +64,7 @@ contract MarketExecutorHarness is MarketExecutor {
     ) MarketExecutor(_usdc, _riskManager, _positionManager, _treasuryManager, _backendSigner) {}
 
     function exposeSettle(address trader, uint256 collateral, int256 pnl, uint256 tradingFee) external {
-        _settleIsolatedMargin(trader, collateral, pnl, tradingFee);
+        _settleIsolatedMargin(trader, collateral, pnl, tradingFee, msg.sender);
     }
 }
 

@@ -282,10 +282,7 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
      * @param _stakingRewards New staking rewards address
      * @param _protocolTreasury New protocol treasury address
      */
-    function updateAddresses(address _stakingRewards, address _protocolTreasury)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function updateAddresses(address _stakingRewards, address _protocolTreasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_stakingRewards != address(0)) {
             stakingRewards = _stakingRewards;
         }

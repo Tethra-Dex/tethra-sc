@@ -185,12 +185,13 @@ contract FullDeploy is Script {
         );
         console.log("  TapToTradeExecutor deployed:", address(tapToTradeExecutor));
 
-        // Deploy OneTapProfit (needs backendSigner and settler)
+        // Deploy OneTapProfit (needs backendSigner, keeper, and settler)
         oneTapProfit = new OneTapProfitContract(
             address(mockUSDC),
             address(treasuryManager),
             priceSignerWallet, // backendSigner
-            keeperWallet // settler
+            keeperWallet, // keeper
+            keeperWallet // settler (same as keeper)
         );
         console.log("  OneTapProfit deployed:", address(oneTapProfit));
     }

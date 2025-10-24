@@ -208,8 +208,9 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant returns (uint256 positionId) {
         // Verify user signature
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this)));
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this))
+        );
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);
@@ -288,8 +289,18 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant {
         // Get position details first to get symbol for signature verification
-        (, address positionTrader, string memory symbol, bool isLong, uint256 collateral, uint256 size,,,, uint8 status)
-        = positionManager.getPosition(positionId);
+        (
+            ,
+            address positionTrader,
+            string memory symbol,
+            bool isLong,
+            uint256 collateral,
+            uint256 size,
+            ,
+            ,
+            ,
+            uint8 status
+        ) = positionManager.getPosition(positionId);
 
         // Verify user signature
         bytes32 messageHash = keccak256(abi.encodePacked(trader, positionId, metaNonces[trader], address(this)));
@@ -330,18 +341,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
      */
     function liquidatePosition(uint256 positionId, SignedPrice calldata signedPrice) external nonReentrant {
         // Get position details
-        (
-            ,
-            address trader,
-            string memory symbol,
-            bool isLong,
-            uint256 collateral,
-            uint256 size,
-            ,
-            uint256 entryPrice,
-            ,
-            uint8 status
-        ) = positionManager.getPosition(positionId);
+        (,, string memory symbol, bool isLong, uint256 collateral, uint256 size,, uint256 entryPrice,, uint8 status) =
+            positionManager.getPosition(positionId);
 
         require(status == 0, "MarketExecutor: Position not open");
         require(keccak256(bytes(symbol)) == keccak256(bytes(signedPrice.symbol)), "MarketExecutor: Symbol mismatch");

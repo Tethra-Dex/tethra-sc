@@ -140,7 +140,9 @@ contract LimitExecutorV2Test is Test {
 
         assertEq(usdc.balanceOf(trader) - traderBalanceBefore, expectedRefund, "Trader refund after close mismatch");
 
-        assertEq(treasury.totalFees() - treasuryFeesBefore, tradingFee, "Trading fee not accounted for in treasury");
+        // Fee split: 20% to relayer, 80% to treasury
+        uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
+        assertEq(treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not accounted for in treasury");
     }
 
     function testStopLossCapsLossAtNinetyNinePercent() public {
@@ -192,7 +194,9 @@ contract LimitExecutorV2Test is Test {
             "Treasury refund accounting mismatch"
         );
 
-        assertEq(treasury.totalFees() - treasuryFeesBefore, tradingFee, "Trading fee not collected on stop loss");
+        // Fee split: 20% to relayer, 80% to treasury
+        uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
+        assertEq(treasury.totalFees() - treasuryFeesBefore, expectedTreasuryFee, "Trading fee not collected on stop loss");
     }
 
     // -------------------------------------------------------------------------

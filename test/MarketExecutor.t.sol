@@ -205,8 +205,12 @@ contract MarketExecutorTest is Test {
 
         uint256 expectedRefund = collateral + uint256(pnl) - tradingFee;
         assertEq(usdc.balanceOf(trader) - traderBalanceBefore, expectedRefund, "Trader refund mismatch");
-        assertEq(treasury.totalFeesCollected(), tradingFee, "Trading fee accounting mismatch");
-        assertEq(treasuryBalanceBefore - usdc.balanceOf(address(treasury)), expectedRefund, "Treasury outflow mismatch");
+        // Fee split: 20% to relayer, 80% to treasury
+        uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
+        assertEq(treasury.totalFeesCollected(), expectedTreasuryFee, "Trading fee accounting mismatch");
+        // Treasury outflow = refund to trader + relayer fee
+        uint256 relayerFee = (tradingFee * 2000) / 10000;
+        assertEq(treasuryBalanceBefore - usdc.balanceOf(address(treasury)), expectedRefund + relayerFee, "Treasury outflow mismatch");
     }
 
     function testSettlementCapsLossAtNinetyNinePercent() public {
@@ -226,7 +230,9 @@ contract MarketExecutorTest is Test {
 
         assertGt(refundReceived, 0, "Refund should remain positive");
         assertLe(refundReceived, maxRefund, "Refund should be capped near 1%");
-        assertEq(treasury.totalFeesCollected(), tradingFee, "Trading fee should still be collected");
+        // Fee split: 20% to relayer, 80% to treasury
+        uint256 expectedTreasuryFee = (tradingFee * 8000) / 10000;
+        assertEq(treasury.totalFeesCollected(), expectedTreasuryFee, "Trading fee should still be collected");
     }
 
     // -------------------------------------------------------------------------

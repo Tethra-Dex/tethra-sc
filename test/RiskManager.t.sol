@@ -249,7 +249,10 @@ contract RiskManagerTest is Test {
         uint256 leverage = 10;
         uint256 entryPrice = 50_000 * 10 ** 8;
         uint256 size = collateral * leverage;
-        uint256 currentPrice = (entryPrice * 30) / 100; // 70% drop < 99%
+        // Test with 5% price drop which causes 50% loss with 10x leverage
+        // PnL = -5% * 10 = -50% of collateral = -500 USDC
+        // Loss is 50% < 99%, so should NOT liquidate
+        uint256 currentPrice = (entryPrice * 95) / 100; // 5% drop
 
         bool shouldLiquidate = riskManager.shouldLiquidate(1, currentPrice, collateral, size, entryPrice, true);
         assertFalse(shouldLiquidate, "Loss below 99% should not liquidate");

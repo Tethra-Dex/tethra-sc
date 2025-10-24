@@ -289,7 +289,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant {
         // Get position details first to get symbol for signature verification
-        (,, string memory symbol, bool isLong, uint256 collateral, uint256 size,,,, uint8 status) =
+        (, address positionTrader, string memory symbol, bool isLong, uint256 collateral, uint256 size,,,, uint8 status) =
             positionManager.getPosition(positionId);
 
         // Verify user signature

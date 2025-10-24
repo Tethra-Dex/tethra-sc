@@ -57,9 +57,9 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
 
     // Session key management
     struct SessionKey {
-        address keyAddress;      // Session key address
-        uint256 expiresAt;       // Expiration timestamp
-        bool isActive;           // Active status
+        address keyAddress; // Session key address
+        uint256 expiresAt; // Expiration timestamp
+        bool isActive; // Active status
     }
 
     // Mapping: trader => session key address => SessionKey
@@ -91,9 +91,9 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
      */
     struct SignedPrice {
         string symbol;
-        uint256 price;      // Price with 8 decimals
-        uint256 timestamp;  // When price was signed
-        bytes signature;    // Backend signature
+        uint256 price; // Price with 8 decimals
+        uint256 timestamp; // When price was signed
+        bytes signature; // Backend signature
     }
 
     constructor(
@@ -125,11 +125,7 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
      * @param duration Duration in seconds (max 2 hours)
      * @param authSignature Signature from trader authorizing this session key
      */
-    function authorizeSessionKey(
-        address sessionKeyAddress,
-        uint256 duration,
-        bytes calldata authSignature
-    ) external {
+    function authorizeSessionKey(address sessionKeyAddress, uint256 duration, bytes calldata authSignature) external {
         require(sessionKeyAddress != address(0), "TapToTradeExecutor: Invalid session key");
         require(duration > 0 && duration <= MAX_SESSION_DURATION, "TapToTradeExecutor: Invalid duration");
 
@@ -139,12 +135,7 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
         // Verify authorization signature
         // Message format must match frontend: keccak256(toHex("Authorize session key {address} for Tethra Tap-to-Trade until {timestamp}"))
         bytes32 messageHash = keccak256(
-            abi.encodePacked(
-                "Authorize session key ",
-                sessionKeyAddress,
-                " for Tethra Tap-to-Trade until ",
-                expiresAt
-            )
+            abi.encodePacked("Authorize session key ", sessionKeyAddress, " for Tethra Tap-to-Trade until ", expiresAt)
         );
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
@@ -153,11 +144,8 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
         require(signer == msg.sender, "TapToTradeExecutor: Invalid authorization signature");
 
         // Store session key
-        sessionKeys[msg.sender][sessionKeyAddress] = SessionKey({
-            keyAddress: sessionKeyAddress,
-            expiresAt: expiresAt,
-            isActive: true
-        });
+        sessionKeys[msg.sender][sessionKeyAddress] =
+            SessionKey({keyAddress: sessionKeyAddress, expiresAt: expiresAt, isActive: true});
 
         emit SessionKeyAuthorized(msg.sender, sessionKeyAddress, expiresAt);
     }
@@ -167,10 +155,7 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
      * @param sessionKeyAddress Address of the session key to revoke
      */
     function revokeSessionKey(address sessionKeyAddress) external {
-        require(
-            sessionKeys[msg.sender][sessionKeyAddress].isActive,
-            "TapToTradeExecutor: Session key not active"
-        );
+        require(sessionKeys[msg.sender][sessionKeyAddress].isActive, "TapToTradeExecutor: Session key not active");
 
         sessionKeys[msg.sender][sessionKeyAddress].isActive = false;
 
@@ -232,16 +217,15 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
         );
 
         // Collect collateral from TRADER (not keeper!)
-        require(
-            usdc.transferFrom(trader, address(treasuryManager), collateral),
-            "TapToTradeExecutor: Transfer failed"
-        );
+        require(usdc.transferFrom(trader, address(treasuryManager), collateral), "TapToTradeExecutor: Transfer failed");
 
         // Create position via PositionManager (use trader address)
         positionId = positionManager.createPosition(trader, symbol, isLong, collateral, leverage, signedPrice.price);
 
         emit MetaTransactionExecuted(trader, msg.sender, metaNonces[trader] - 1);
-        emit TapToTradeOrderExecuted(positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, signer);
+        emit TapToTradeOrderExecuted(
+            positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, signer
+        );
     }
 
     /**
@@ -275,15 +259,14 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
         );
 
         // Collect collateral from TRADER (not keeper!)
-        require(
-            usdc.transferFrom(trader, address(treasuryManager), collateral),
-            "TapToTradeExecutor: Transfer failed"
-        );
+        require(usdc.transferFrom(trader, address(treasuryManager), collateral), "TapToTradeExecutor: Transfer failed");
 
         // Create position via PositionManager (use trader address)
         positionId = positionManager.createPosition(trader, symbol, isLong, collateral, leverage, signedPrice.price);
 
-        emit TapToTradeOrderExecuted(positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, msg.sender);
+        emit TapToTradeOrderExecuted(
+            positionId, trader, symbol, isLong, collateral, leverage, signedPrice.price, msg.sender
+        );
     }
 
     /**
@@ -292,23 +275,15 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
      */
     function _verifySignedPrice(SignedPrice calldata signedPrice) internal view {
         // Check price freshness
-        require(
-            block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW,
-            "TapToTradeExecutor: Price too old"
-        );
+        require(block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW, "TapToTradeExecutor: Price too old");
 
         // Reconstruct message hash
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(signedPrice.symbol, signedPrice.price, signedPrice.timestamp)
-        );
+        bytes32 messageHash = keccak256(abi.encodePacked(signedPrice.symbol, signedPrice.price, signedPrice.timestamp));
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(signedPrice.signature);
 
-        require(
-            hasRole(BACKEND_SIGNER_ROLE, signer),
-            "TapToTradeExecutor: Invalid price signature"
-        );
+        require(hasRole(BACKEND_SIGNER_ROLE, signer), "TapToTradeExecutor: Invalid price signature");
     }
 
     /**

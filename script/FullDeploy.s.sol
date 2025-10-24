@@ -9,9 +9,9 @@ import "../src/risk/RiskManager.sol";
 import "../src/trading/PositionManager.sol";
 import "../src/treasury/TreasuryManager.sol";
 import "../src/trading/MarketExecutor.sol";
-import "../src/trading/LimitExecutorV2.sol";
-import "../src/trading/TapToTradeExecutor.sol";
-import "../src/trading/OneTapProfit.sol";
+import {LimitExecutorV2 as LimitExecutorV2Contract} from "../src/trading/LimitExecutorV2.sol";
+import {TapToTradeExecutor as TapToTradeExecutorContract} from "../src/trading/TapToTradeExecutor.sol";
+import {OneTapProfit as OneTapProfitContract} from "../src/trading/OneTapProfit.sol";
 import "../src/paymaster/USDCPaymaster.sol";
 import "../src/staking/TethraStaking.sol";
 import "../src/staking/LiquidityMining.sol";
@@ -20,7 +20,7 @@ import "../src/staking/LiquidityMining.sol";
  * @title FullDeploy
  * @notice Complete deployment script for Tethra DEX with automatic role grants
  * @dev Deploys all contracts, grants roles, and initializes token distribution
- * 
+ *
  * Usage:
  * forge script script/FullDeploy.s.sol \
  *   --rpc-url https://sepolia.base.org \
@@ -35,9 +35,9 @@ contract FullDeploy is Script {
     PositionManager public positionManager;
     TreasuryManager public treasuryManager;
     MarketExecutor public marketExecutor;
-    LimitExecutorV2 public limitExecutor;
-    TapToTradeExecutor public tapToTradeExecutor;
-    OneTapProfit public oneTapProfit;
+    LimitExecutorV2Contract public limitExecutor;
+    TapToTradeExecutorContract public tapToTradeExecutor;
+    OneTapProfitContract public oneTapProfit;
     USDCPaymaster public usdcPaymaster;
     TethraStaking public tethraStaking;
     LiquidityMining public liquidityMining;
@@ -51,26 +51,26 @@ contract FullDeploy is Script {
 
     function run() external {
         deployer = vm.envAddress("DEPLOYER_ADDRESS");
-        
+
         // Setup addresses (can be env vars or use deployer as default)
         try vm.envAddress("TEAM_WALLET") returns (address _team) {
             teamWallet = _team;
         } catch {
             teamWallet = deployer; // Default to deployer
         }
-        
+
         try vm.envAddress("PROTOCOL_TREASURY") returns (address _treasury) {
             protocolTreasury = _treasury;
         } catch {
             protocolTreasury = deployer;
         }
-        
+
         try vm.envAddress("KEEPER_WALLET") returns (address _keeper) {
             keeperWallet = _keeper;
         } catch {
             keeperWallet = deployer;
         }
-        
+
         try vm.envAddress("PRICE_SIGNER_WALLET") returns (address _signer) {
             priceSignerWallet = _signer;
         } catch {
@@ -113,14 +113,14 @@ contract FullDeploy is Script {
 
         // Print deployment summary
         printDeploymentSummary();
-        
+
         // Save deployment to JSON
         saveDeployment();
     }
 
     function deployTokens() internal {
-        // Deploy Mock USDC (testnet only)
-        mockUSDC = new MockUSDC();
+        // Deploy Mock USDC (testnet only) - 10M initial supply
+        mockUSDC = new MockUSDC(10_000_000);
         console.log("  MockUSDC deployed:", address(mockUSDC));
 
         // Deploy Tethra Token
@@ -133,8 +133,8 @@ contract FullDeploy is Script {
         riskManager = new RiskManager();
         console.log("  RiskManager deployed:", address(riskManager));
 
-        // Deploy PositionManager
-        positionManager = new PositionManager(address(mockUSDC), address(riskManager));
+        // Deploy PositionManager (no constructor params)
+        positionManager = new PositionManager();
         console.log("  PositionManager deployed:", address(positionManager));
 
         // Deploy TreasuryManager
@@ -145,63 +145,63 @@ contract FullDeploy is Script {
         );
         console.log("  TreasuryManager deployed:", address(treasuryManager));
 
-        // Deploy MarketExecutor
+        // Deploy MarketExecutor (needs backendSigner)
         marketExecutor = new MarketExecutor(
             address(mockUSDC),
-            address(positionManager),
             address(riskManager),
-            address(treasuryManager)
+            address(positionManager),
+            address(treasuryManager),
+            priceSignerWallet // backendSigner
         );
         console.log("  MarketExecutor deployed:", address(marketExecutor));
 
-        // Deploy USDCPaymaster
+        // Deploy USDCPaymaster (needs usdcPerEth rate, e.g., 3000 USDC per ETH)
         usdcPaymaster = new USDCPaymaster(
             address(mockUSDC),
-            address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) // WETH (placeholder)
+            3000_000000 // 3000 USDC per ETH (6 decimals)
         );
         console.log("  USDCPaymaster deployed:", address(usdcPaymaster));
     }
 
     function deployAdvancedTrading() internal {
-        // Deploy LimitExecutorV2
-        limitExecutor = new LimitExecutorV2(
+        // Deploy LimitExecutorV2 (needs keeper and backendSigner)
+        limitExecutor = new LimitExecutorV2Contract(
             address(mockUSDC),
-            address(positionManager),
             address(riskManager),
-            address(treasuryManager)
+            address(positionManager),
+            address(treasuryManager),
+            keeperWallet, // keeper
+            priceSignerWallet // backendSigner
         );
         console.log("  LimitExecutorV2 deployed:", address(limitExecutor));
 
-        // Deploy TapToTradeExecutor
-        tapToTradeExecutor = new TapToTradeExecutor(
+        // Deploy TapToTradeExecutor (needs backendSigner)
+        tapToTradeExecutor = new TapToTradeExecutorContract(
             address(mockUSDC),
-            address(positionManager),
             address(riskManager),
-            address(treasuryManager)
+            address(positionManager),
+            address(treasuryManager),
+            priceSignerWallet // backendSigner
         );
         console.log("  TapToTradeExecutor deployed:", address(tapToTradeExecutor));
 
-        // Deploy OneTapProfit
-        oneTapProfit = new OneTapProfit(
+        // Deploy OneTapProfit (needs backendSigner and settler)
+        oneTapProfit = new OneTapProfitContract(
             address(mockUSDC),
-            address(treasuryManager)
+            address(treasuryManager),
+            priceSignerWallet, // backendSigner
+            keeperWallet // settler
         );
         console.log("  OneTapProfit deployed:", address(oneTapProfit));
     }
 
     function deployStakingContracts() internal {
         // Deploy TethraStaking
-        tethraStaking = new TethraStaking(
-            address(tethraToken),
-            address(mockUSDC)
-        );
+        tethraStaking = new TethraStaking(address(tethraToken), address(mockUSDC));
         console.log("  TethraStaking deployed:", address(tethraStaking));
 
         // Deploy LiquidityMining
-        liquidityMining = new LiquidityMining(
-            address(mockUSDC),
-            address(tethraToken)
-        );
+        liquidityMining = new LiquidityMining(address(mockUSDC), address(tethraToken));
         console.log("  LiquidityMining deployed:", address(liquidityMining));
     }
 
@@ -211,46 +211,44 @@ contract FullDeploy is Script {
         // Grant EXECUTOR_ROLE on TreasuryManager to all trading executors
         bytes32 executorRole = treasuryManager.EXECUTOR_ROLE();
         treasuryManager.grantRole(executorRole, address(marketExecutor));
-        console.log("  ✓ Granted EXECUTOR_ROLE to MarketExecutor");
-        
+        console.log("Granted EXECUTOR_ROLE to MarketExecutor");
+
         treasuryManager.grantRole(executorRole, address(limitExecutor));
-        console.log("  ✓ Granted EXECUTOR_ROLE to LimitExecutorV2");
-        
+        console.log("Granted EXECUTOR_ROLE to LimitExecutorV2");
+
         treasuryManager.grantRole(executorRole, address(tapToTradeExecutor));
-        console.log("  ✓ Granted EXECUTOR_ROLE to TapToTradeExecutor");
-        
+        console.log("Granted EXECUTOR_ROLE to TapToTradeExecutor");
+
         treasuryManager.grantRole(executorRole, address(oneTapProfit));
-        console.log("  ✓ Granted EXECUTOR_ROLE to OneTapProfit");
+        console.log("Granted EXECUTOR_ROLE to OneTapProfit");
 
         // Grant KEEPER_ROLE on TreasuryManager to keeper wallet
         bytes32 keeperRole = treasuryManager.KEEPER_ROLE();
         treasuryManager.grantRole(keeperRole, keeperWallet);
-        console.log("  ✓ Granted KEEPER_ROLE to Keeper Wallet");
+        console.log("Granted KEEPER_ROLE to Keeper Wallet");
 
         // Grant KEEPER_ROLE on LimitExecutorV2 to keeper wallet
         bytes32 limitKeeperRole = limitExecutor.KEEPER_ROLE();
         limitExecutor.grantRole(limitKeeperRole, keeperWallet);
-        console.log("  ✓ Granted KEEPER_ROLE on LimitExecutor to Keeper Wallet");
+        console.log("Granted KEEPER_ROLE on LimitExecutor to Keeper Wallet");
 
-        // Grant PRICE_SIGNER_ROLE on MarketExecutor to price signer wallet
-        bytes32 priceSignerRole = marketExecutor.PRICE_SIGNER_ROLE();
-        marketExecutor.grantRole(priceSignerRole, priceSignerWallet);
-        console.log("  ✓ Granted PRICE_SIGNER_ROLE to Price Signer");
+        // Note: BACKEND_SIGNER_ROLE already granted in MarketExecutor constructor
+        console.log("  [OK] BACKEND_SIGNER_ROLE granted to Price Signer (in constructor)");
 
         console.log("\n  === Initializing Contracts ===");
 
         // Update TreasuryManager with staking address
         treasuryManager.updateAddresses(address(tethraStaking), protocolTreasury);
-        console.log("  ✓ Updated TreasuryManager addresses");
+        console.log("Updated TreasuryManager addresses");
 
         // Initialize TethraToken distribution
         tethraToken.initialize(
-            protocolTreasury,      // Treasury allocation
-            teamWallet,            // Team allocation
-            address(tethraStaking),    // Staking rewards
-            address(liquidityMining)   // Liquidity mining rewards
+            protocolTreasury, // Treasury allocation
+            teamWallet, // Team allocation
+            address(tethraStaking), // Staking rewards
+            address(liquidityMining) // Liquidity mining rewards
         );
-        console.log("  ✓ Initialized TethraToken distribution");
+        console.log("Initialized TethraToken distribution");
         console.log("    - Treasury:", protocolTreasury, "- 1M TETH");
         console.log("    - Team:", teamWallet, "- 2M TETH");
         console.log("    - Staking:", address(tethraStaking), "- 5M TETH");
@@ -264,31 +262,31 @@ contract FullDeploy is Script {
         console.log("\nToken Contracts:");
         console.log("  MockUSDC:", address(mockUSDC));
         console.log("  TethraToken:", address(tethraToken));
-        
+
         console.log("\nCore Trading:");
         console.log("  RiskManager:", address(riskManager));
         console.log("  PositionManager:", address(positionManager));
         console.log("  TreasuryManager:", address(treasuryManager));
         console.log("  MarketExecutor:", address(marketExecutor));
         console.log("  USDCPaymaster:", address(usdcPaymaster));
-        
+
         console.log("\nAdvanced Trading:");
         console.log("  LimitExecutorV2:", address(limitExecutor));
         console.log("  TapToTradeExecutor:", address(tapToTradeExecutor));
         console.log("  OneTapProfit:", address(oneTapProfit));
-        
+
         console.log("\nStaking & Incentives:");
         console.log("  TethraStaking:", address(tethraStaking));
         console.log("  LiquidityMining:", address(liquidityMining));
-        
+
         console.log("\nRole Assignments:");
         console.log("  Keeper Wallet:", keeperWallet);
         console.log("  Price Signer:", priceSignerWallet);
         console.log("  Team Wallet:", teamWallet);
         console.log("  Protocol Treasury:", protocolTreasury);
-        
+
         console.log("\n=================================================");
-        console.log("✅ DEPLOYMENT COMPLETE!");
+        console.log("DEPLOYMENT COMPLETE!");
         console.log("=================================================");
         console.log("\nNext Steps:");
         console.log("1. Copy addresses to tethra-be/.env");
@@ -299,41 +297,81 @@ contract FullDeploy is Script {
     }
 
     function saveDeployment() internal {
-        string memory json = string(abi.encodePacked(
-            '{\n',
-            '  "chainId": ', vm.toString(block.chainid), ',\n',
-            '  "deployer": "', vm.toString(deployer), '",\n',
-            '  "timestamp": ', vm.toString(block.timestamp), ',\n',
-            '  "contracts": {\n',
-            '    "MockUSDC": "', vm.toString(address(mockUSDC)), '",\n',
-            '    "TethraToken": "', vm.toString(address(tethraToken)), '",\n',
-            '    "RiskManager": "', vm.toString(address(riskManager)), '",\n',
-            '    "PositionManager": "', vm.toString(address(positionManager)), '",\n',
-            '    "TreasuryManager": "', vm.toString(address(treasuryManager)), '",\n',
-            '    "MarketExecutor": "', vm.toString(address(marketExecutor)), '",\n',
-            '    "LimitExecutorV2": "', vm.toString(address(limitExecutor)), '",\n',
-            '    "TapToTradeExecutor": "', vm.toString(address(tapToTradeExecutor)), '",\n',
-            '    "OneTapProfit": "', vm.toString(address(oneTapProfit)), '",\n',
-            '    "USDCPaymaster": "', vm.toString(address(usdcPaymaster)), '",\n',
-            '    "TethraStaking": "', vm.toString(address(tethraStaking)), '",\n',
-            '    "LiquidityMining": "', vm.toString(address(liquidityMining)), '"\n',
-            '  },\n',
-            '  "roles": {\n',
-            '    "keeperWallet": "', vm.toString(keeperWallet), '",\n',
-            '    "priceSignerWallet": "', vm.toString(priceSignerWallet), '",\n',
-            '    "teamWallet": "', vm.toString(teamWallet), '",\n',
-            '    "protocolTreasury": "', vm.toString(protocolTreasury), '"\n',
-            '  }\n',
-            '}'
-        ));
+        string memory json = string(
+            abi.encodePacked(
+                "{\n",
+                '  "chainId": ',
+                vm.toString(block.chainid),
+                ",\n",
+                '  "deployer": "',
+                vm.toString(deployer),
+                '",\n',
+                '  "timestamp": ',
+                vm.toString(block.timestamp),
+                ",\n",
+                '  "contracts": {\n',
+                '    "MockUSDC": "',
+                vm.toString(address(mockUSDC)),
+                '",\n',
+                '    "TethraToken": "',
+                vm.toString(address(tethraToken)),
+                '",\n',
+                '    "RiskManager": "',
+                vm.toString(address(riskManager)),
+                '",\n',
+                '    "PositionManager": "',
+                vm.toString(address(positionManager)),
+                '",\n',
+                '    "TreasuryManager": "',
+                vm.toString(address(treasuryManager)),
+                '",\n',
+                '    "MarketExecutor": "',
+                vm.toString(address(marketExecutor)),
+                '",\n',
+                '    "LimitExecutorV2": "',
+                vm.toString(address(limitExecutor)),
+                '",\n',
+                '    "TapToTradeExecutor": "',
+                vm.toString(address(tapToTradeExecutor)),
+                '",\n',
+                '    "OneTapProfit": "',
+                vm.toString(address(oneTapProfit)),
+                '",\n',
+                '    "USDCPaymaster": "',
+                vm.toString(address(usdcPaymaster)),
+                '",\n',
+                '    "TethraStaking": "',
+                vm.toString(address(tethraStaking)),
+                '",\n',
+                '    "LiquidityMining": "',
+                vm.toString(address(liquidityMining)),
+                '"\n',
+                "  },\n",
+                '  "roles": {\n',
+                '    "keeperWallet": "',
+                vm.toString(keeperWallet),
+                '",\n',
+                '    "priceSignerWallet": "',
+                vm.toString(priceSignerWallet),
+                '",\n',
+                '    "teamWallet": "',
+                vm.toString(teamWallet),
+                '",\n',
+                '    "protocolTreasury": "',
+                vm.toString(protocolTreasury),
+                '"\n',
+                "  }\n",
+                "}"
+            )
+        );
 
         // Create deployments directory if it doesn't exist
-        string memory network = block.chainid == 84532 ? "base-sepolia" : 
-                               block.chainid == 8453 ? "base-mainnet" : "unknown";
-        
+        string memory network =
+            block.chainid == 84532 ? "base-sepolia" : block.chainid == 8453 ? "base-mainnet" : "unknown";
+
         string memory filepath = string(abi.encodePacked("deployments/", network, "-latest.json"));
         vm.writeFile(filepath, json);
-        
+
         console.log("Deployment saved to:", filepath);
     }
 }

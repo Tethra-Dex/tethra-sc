@@ -130,9 +130,7 @@ contract MarketExecutorTest is Test {
         assertEq(positionId, 1);
         assertEq(traderBalanceBefore - usdc.balanceOf(trader), COLLATERAL, "Trader should pay only collateral");
         assertEq(
-            usdc.balanceOf(address(treasury)) - treasuryBalanceBefore,
-            COLLATERAL,
-            "Treasury should receive collateral"
+            usdc.balanceOf(address(treasury)) - treasuryBalanceBefore, COLLATERAL, "Treasury should receive collateral"
         );
 
         PositionManager.Position memory position = positionManager.getPosition(positionId);
@@ -203,11 +201,7 @@ contract MarketExecutorTest is Test {
         uint256 expectedRefund = collateral + uint256(pnl) - tradingFee;
         assertEq(usdc.balanceOf(trader) - traderBalanceBefore, expectedRefund, "Trader refund mismatch");
         assertEq(treasury.totalFeesCollected(), tradingFee, "Trading fee accounting mismatch");
-        assertEq(
-            treasuryBalanceBefore - usdc.balanceOf(address(treasury)),
-            expectedRefund,
-            "Treasury outflow mismatch"
-        );
+        assertEq(treasuryBalanceBefore - usdc.balanceOf(address(treasury)), expectedRefund, "Treasury outflow mismatch");
     }
 
     function testSettlementCapsLossAtNinetyNinePercent() public {

@@ -54,7 +54,9 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
 
     event RelayerFeePaid(address indexed relayer, uint256 amount, uint256 timestamp);
 
-    event FeeCollectedWithSplit(address indexed from, uint256 totalAmount, uint256 relayerAmount, uint256 treasuryAmount, uint256 timestamp);
+    event FeeCollectedWithSplit(
+        address indexed from, uint256 totalAmount, uint256 relayerAmount, uint256 treasuryAmount, uint256 timestamp
+    );
 
     event LiquidityAdded(address indexed provider, uint256 amount, uint256 timestamp);
 
@@ -345,7 +347,13 @@ contract TreasuryManager is AccessControl, ReentrancyGuard {
             uint256 relayerFeesPaid
         )
     {
-        return (totalFeesCollected, totalProfitsDistributed, totalCollateralRefunded, totalKeeperFeesPaid, totalRelayerFeesPaid);
+        return (
+            totalFeesCollected,
+            totalProfitsDistributed,
+            totalCollateralRefunded,
+            totalKeeperFeesPaid,
+            totalRelayerFeesPaid
+        );
     }
 
     /**

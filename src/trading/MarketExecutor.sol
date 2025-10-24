@@ -177,9 +177,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         uint256 fee = (positionSize * tradingFeeBps) / 100000;
 
         // Collect collateral + fee from trader
-        require(
-            usdc.transferFrom(msg.sender, address(treasuryManager), collateral), "MarketExecutor: Transfer failed"
-        );
+        require(usdc.transferFrom(msg.sender, address(treasuryManager), collateral), "MarketExecutor: Transfer failed");
 
         // Collect fee to treasury
         // treasuryManager.collectFee(msg.sender, fee);
@@ -235,9 +233,7 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         // uint256 fee = (positionSize * tradingFeeBps) / 10000;
 
         // Collect collateral + fee from TRADER (not relayer!)
-        require(
-            usdc.transferFrom(trader, address(treasuryManager), collateral), "MarketExecutor: Transfer failed"
-        );
+        require(usdc.transferFrom(trader, address(treasuryManager), collateral), "MarketExecutor: Transfer failed");
 
         // Collect fee to treasury
         // treasuryManager.collectFee(trader, fee);
@@ -384,27 +380,12 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         require(signedPrice.price > 0, "MarketExecutor: Invalid price");
 
         // Original validation (commented out for now):
-        require(
-            block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW,
-            "MarketExecutor: Price expired"
-        );
-        require(
-            signedPrice.timestamp <= block.timestamp,
-            "MarketExecutor: Price timestamp in future"
-        );
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(
-                signedPrice.symbol,
-                signedPrice.price,
-                signedPrice.timestamp
-            )
-        );
+        require(block.timestamp <= signedPrice.timestamp + PRICE_VALIDITY_WINDOW, "MarketExecutor: Price expired");
+        require(signedPrice.timestamp <= block.timestamp, "MarketExecutor: Price timestamp in future");
+        bytes32 messageHash = keccak256(abi.encodePacked(signedPrice.symbol, signedPrice.price, signedPrice.timestamp));
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(signedPrice.signature);
-        require(
-            hasRole(BACKEND_SIGNER_ROLE, signer),
-            "MarketExecutor: Invalid signature"
-        );
+        require(hasRole(BACKEND_SIGNER_ROLE, signer), "MarketExecutor: Invalid signature");
     }
 
     /**
@@ -433,19 +414,15 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         if (_positionManager != address(0)) positionManager = IPositionManager(_positionManager);
         if (_treasuryManager != address(0)) treasuryManager = ITreasuryManager(_treasuryManager);
     }
-    
+
     /**
      * @notice Settle position with isolated margin rules
      * @dev Max loss CAPPED at 99% of collateral
      * @dev Fee split: 0.01% to relayer, 0.04% to treasury
      */
-    function _settleIsolatedMargin(
-        address trader,
-        uint256 collateral,
-        int256 pnl,
-        uint256 tradingFee,
-        address relayer
-    ) internal {
+    function _settleIsolatedMargin(address trader, uint256 collateral, int256 pnl, uint256 tradingFee, address relayer)
+        internal
+    {
         // ✅ CAP LOSS AT 99%
         int256 maxAllowedLoss = -int256((collateral * 9900) / 10000);
 
@@ -479,7 +456,6 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
                     }
                 }
             }
-
         } else {
             treasuryManager.collectFeeWithRelayerSplit(trader, relayer, tradingFee);
             treasuryManager.refundCollateral(trader, uint256(netAmount));

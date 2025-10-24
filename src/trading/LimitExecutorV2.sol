@@ -156,10 +156,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
     );
 
     event LimitOrderExecuted(
-        uint256 indexed orderId,
-        uint256 indexed positionId,
-        address indexed keeper,
-        uint256 executionPrice
+        uint256 indexed orderId, uint256 indexed positionId, address indexed keeper, uint256 executionPrice
     );
 
     event LimitOrderCancelled(uint256 indexed orderId, address indexed trader);
@@ -231,15 +228,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         // Verify user signature
         bytes32 messageHash = keccak256(
             abi.encodePacked(
-                trader,
-                symbol,
-                isLong,
-                collateral,
-                leverage,
-                triggerPrice,
-                nonce,
-                expiresAt,
-                address(this)
+                trader, symbol, isLong, collateral, leverage, triggerPrice, nonce, expiresAt, address(this)
             )
         );
 
@@ -352,12 +341,11 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
      * @param nonce User's current nonce
      * @param userSignature User's signature authorizing cancellation
      */
-    function cancelOrderGasless(
-        address trader,
-        uint256 orderId,
-        uint256 nonce,
-        bytes calldata userSignature
-    ) external onlyRole(KEEPER_ROLE) nonReentrant {
+    function cancelOrderGasless(address trader, uint256 orderId, uint256 nonce, bytes calldata userSignature)
+        external
+        onlyRole(KEEPER_ROLE)
+        nonReentrant
+    {
         Order storage order = orders[orderId];
 
         require(order.id != 0, "Order not found");
@@ -368,9 +356,7 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
 
         // Verify user signature
         // Message format: trader, orderId, nonce, contract address, "CANCEL"
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(trader, orderId, nonce, address(this), "CANCEL")
-        );
+        bytes32 messageHash = keccak256(abi.encodePacked(trader, orderId, nonce, address(this), "CANCEL"));
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);
@@ -407,9 +393,8 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         require(uint8(position.status) == uint8(IPositionManager.PositionStatus.OPEN), "Position not open");
 
         // Verify signature
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(trader, positionId, triggerPrice, nonce, expiresAt, address(this))
-        );
+        bytes32 messageHash =
+            keccak256(abi.encodePacked(trader, positionId, triggerPrice, nonce, expiresAt, address(this)));
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);
@@ -659,13 +644,9 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
      *      User always gets ~1% back (better UX)
      * @dev Fee split: 0.01% to relayer, 0.04% to treasury
      */
-    function _settleIsolatedMargin(
-        address trader,
-        uint256 collateral,
-        int256 pnl,
-        uint256 tradingFee,
-        address relayer
-    ) internal {
+    function _settleIsolatedMargin(address trader, uint256 collateral, int256 pnl, uint256 tradingFee, address relayer)
+        internal
+    {
         int256 maxAllowedLoss = -int256((collateral * 9900) / 10000); // -99% of collateral
 
         int256 cappedPnl = pnl;
@@ -712,7 +693,6 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
                     }
                 }
             }
-
         } else {
             // Normal case: profit or small loss
             uint256 refundAmount = uint256(netAmount);
@@ -722,4 +702,3 @@ contract LimitExecutorV2 is AccessControl, ReentrancyGuard {
         }
     }
 }
-

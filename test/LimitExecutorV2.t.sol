@@ -138,17 +138,9 @@ contract LimitExecutorV2Test is Test {
 
         uint256 expectedRefund = uint256(netAmount);
 
-        assertEq(
-            usdc.balanceOf(trader) - traderBalanceBefore,
-            expectedRefund,
-            "Trader refund after close mismatch"
-        );
+        assertEq(usdc.balanceOf(trader) - traderBalanceBefore, expectedRefund, "Trader refund after close mismatch");
 
-        assertEq(
-            treasury.totalFees() - treasuryFeesBefore,
-            tradingFee,
-            "Trading fee not accounted for in treasury"
-        );
+        assertEq(treasury.totalFees() - treasuryFeesBefore, tradingFee, "Trading fee not accounted for in treasury");
     }
 
     function testStopLossCapsLossAtNinetyNinePercent() public {
@@ -192,11 +184,7 @@ contract LimitExecutorV2Test is Test {
         int256 netAmount = int256(position.collateral) + cappedPnl - int256(tradingFee);
         uint256 expectedRefund = netAmount > 0 ? uint256(netAmount) : 0;
 
-        assertEq(
-            usdc.balanceOf(trader) - traderBalanceBefore,
-            expectedRefund,
-            "Refund should match capped loss logic"
-        );
+        assertEq(usdc.balanceOf(trader) - traderBalanceBefore, expectedRefund, "Refund should match capped loss logic");
 
         assertEq(
             treasury.totalCollateralRefunded() - collateralRefundedBefore,
@@ -204,11 +192,7 @@ contract LimitExecutorV2Test is Test {
             "Treasury refund accounting mismatch"
         );
 
-        assertEq(
-            treasury.totalFees() - treasuryFeesBefore,
-            tradingFee,
-            "Trading fee not collected on stop loss"
-        );
+        assertEq(treasury.totalFees() - treasuryFeesBefore, tradingFee, "Trading fee not collected on stop loss");
     }
 
     // -------------------------------------------------------------------------
@@ -234,11 +218,7 @@ contract LimitExecutorV2Test is Test {
         vm.prank(keeper);
         executor.executeLimitOpenOrder(orderId, signedPrice);
 
-        assertEq(
-            traderBalanceBefore - usdc.balanceOf(trader),
-            COLLATERAL,
-            "Only collateral should be debited on open"
-        );
+        assertEq(traderBalanceBefore - usdc.balanceOf(trader), COLLATERAL, "Only collateral should be debited on open");
 
         positionId = executor.getOrder(orderId).positionId;
         executionPrice = signedPrice.price;
@@ -254,7 +234,9 @@ contract LimitExecutorV2Test is Test {
         uint256 expiresAt
     ) internal view returns (bytes memory) {
         bytes32 messageHash = keccak256(
-            abi.encodePacked(orderTrader, "BTC", isLong, collateral, leverage, triggerPrice, nonce, expiresAt, address(executor))
+            abi.encodePacked(
+                orderTrader, "BTC", isLong, collateral, leverage, triggerPrice, nonce, expiresAt, address(executor)
+            )
         );
 
         bytes32 ethSignedHash = messageHash.toEthSignedMessageHash();
@@ -285,15 +267,7 @@ contract LimitExecutorV2Test is Test {
         uint256 expiresAt
     ) internal view returns (bytes memory) {
         bytes32 messageHash = keccak256(
-            abi.encodePacked(
-                orderTrader,
-                positionId,
-                triggerPrice,
-                nonce,
-                expiresAt,
-                address(executor),
-                "STOP_LOSS"
-            )
+            abi.encodePacked(orderTrader, positionId, triggerPrice, nonce, expiresAt, address(executor), "STOP_LOSS")
         );
 
         bytes32 ethSignedHash = messageHash.toEthSignedMessageHash();

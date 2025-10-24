@@ -23,6 +23,7 @@ contract OneTapProfit is AccessControl, ReentrancyGuard {
     using MessageHashUtils for bytes32;
 
     bytes32 public constant BACKEND_SIGNER_ROLE = keccak256("BACKEND_SIGNER_ROLE");
+    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
 
     IERC20 public immutable usdc;
@@ -87,11 +88,13 @@ contract OneTapProfit is AccessControl, ReentrancyGuard {
     );
 
     event MetaTransactionExecuted(address indexed userAddress, address indexed relayerAddress, uint256 nonce);
+    event KeeperExecutionSuccess(address indexed keeper, address indexed trader, uint256 betId);
 
-    constructor(address _usdc, address _treasuryManager, address _backendSigner, address _settler) {
+    constructor(address _usdc, address _treasuryManager, address _backendSigner, address _keeper, address _settler) {
         require(_usdc != address(0), "OneTapProfit: Invalid USDC");
         require(_treasuryManager != address(0), "OneTapProfit: Invalid TreasuryManager");
         require(_backendSigner != address(0), "OneTapProfit: Invalid signer");
+        require(_keeper != address(0), "OneTapProfit: Invalid keeper");
         require(_settler != address(0), "OneTapProfit: Invalid settler");
 
         usdc = IERC20(_usdc);
@@ -99,6 +102,7 @@ contract OneTapProfit is AccessControl, ReentrancyGuard {
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(BACKEND_SIGNER_ROLE, _backendSigner);
+        _grantRole(KEEPER_ROLE, _keeper);
         _grantRole(SETTLER_ROLE, _settler);
     }
 
@@ -211,6 +215,64 @@ contract OneTapProfit is AccessControl, ReentrancyGuard {
         userBets[trader].push(betId);
 
         emit MetaTransactionExecuted(trader, msg.sender, metaNonces[trader] - 1);
+        emit BetPlaced(betId, trader, symbol, betAmount, targetPrice, targetTime, entryPrice, multiplier);
+
+        return betId;
+    }
+
+    /**
+     * @notice Place a bet via keeper (fully gasless for user)
+     * @dev Backend validates session key signature off-chain, keeper executes without signature verification
+     * @param trader The actual trader address
+     * @param symbol Asset symbol (e.g., "BTC", "ETH")
+     * @param betAmount USDC amount to bet (6 decimals)
+     * @param targetPrice Target price user bets on (8 decimals)
+     * @param targetTime Target time user bets on (Unix timestamp)
+     * @param entryPrice Current price when bet is placed (8 decimals)
+     * @param entryTime Current time when bet is placed (Unix timestamp)
+     */
+    function placeBetByKeeper(
+        address trader,
+        string calldata symbol,
+        uint256 betAmount,
+        uint256 targetPrice,
+        uint256 targetTime,
+        uint256 entryPrice,
+        uint256 entryTime
+    ) external onlyRole(KEEPER_ROLE) nonReentrant returns (uint256 betId) {
+        // Validate bet parameters
+        require(betAmount > 0, "OneTapProfit: Invalid bet amount");
+        require(targetPrice > 0, "OneTapProfit: Invalid target price");
+        require(entryPrice > 0, "OneTapProfit: Invalid entry price");
+        require(targetTime > entryTime, "OneTapProfit: Target time must be future");
+        require(targetTime >= entryTime + MIN_TIME_OFFSET, "OneTapProfit: Target too close");
+
+        // Calculate multiplier
+        uint256 multiplier = calculateMultiplier(entryPrice, targetPrice, entryTime, targetTime);
+
+        // Transfer USDC from trader to treasury (keeper pays gas, not trader)
+        require(usdc.transferFrom(trader, address(treasuryManager), betAmount), "OneTapProfit: Transfer failed");
+
+        // Create bet
+        betId = nextBetId++;
+        bets[betId] = Bet({
+            betId: betId,
+            trader: trader,
+            symbol: symbol,
+            betAmount: betAmount,
+            targetPrice: targetPrice,
+            targetTime: targetTime,
+            entryPrice: entryPrice,
+            entryTime: entryTime,
+            multiplier: multiplier,
+            status: BetStatus.ACTIVE,
+            settledAt: 0,
+            settlePrice: 0
+        });
+
+        userBets[trader].push(betId);
+
+        emit KeeperExecutionSuccess(msg.sender, trader, betId);
         emit BetPlaced(betId, trader, symbol, betAmount, targetPrice, targetTime, entryPrice, multiplier);
 
         return betId;

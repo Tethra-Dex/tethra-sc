@@ -250,6 +250,7 @@ contract FullDeploy is Script {
         );
 
         console.log("\n  === Initializing Contracts ===");
+
         // Initialize TethraToken distribution
         tethraToken.initialize(
             protocolTreasury, // Treasury allocation

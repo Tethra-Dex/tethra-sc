@@ -49,7 +49,6 @@ contract OneTapProfit is AccessControl, ReentrancyGuard {
         WON, // Target reached, user won
         LOST, // Expired without reaching target
         CANCELLED // Cancelled by admin
-
     }
 
     struct Bet {

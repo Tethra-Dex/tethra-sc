@@ -154,10 +154,7 @@ contract MarketExecutorTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xDEADBEEF, ethSignedMessageHash);
 
         MarketExecutor.SignedPrice memory signedPrice = MarketExecutor.SignedPrice({
-            symbol: "BTC",
-            price: BTC_PRICE,
-            timestamp: block.timestamp,
-            signature: abi.encodePacked(r, s, v)
+            symbol: "BTC", price: BTC_PRICE, timestamp: block.timestamp, signature: abi.encodePacked(r, s, v)
         });
 
         vm.expectRevert("MarketExecutor: Invalid signature");
@@ -279,10 +276,7 @@ contract MarketExecutorTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(backendSignerPK, ethSignedMessageHash);
 
         return MarketExecutor.SignedPrice({
-            symbol: symbol,
-            price: price,
-            timestamp: timestamp,
-            signature: abi.encodePacked(r, s, v)
+            symbol: symbol, price: price, timestamp: timestamp, signature: abi.encodePacked(r, s, v)
         });
     }
 }

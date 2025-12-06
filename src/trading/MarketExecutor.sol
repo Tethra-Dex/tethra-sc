@@ -293,7 +293,9 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         (, address positionTrader,,,,,,,,) = positionManager.getPosition(positionId);
 
         // Verify user signature
-        bytes32 messageHash = keccak256(abi.encodePacked(trader, positionId, metaNonces[trader], address(this)));
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(trader, positionId, metaNonces[trader], address(this))
+        );
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);

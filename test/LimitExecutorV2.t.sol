@@ -260,7 +260,9 @@ contract LimitExecutorV2Test is Test {
         uint256 expiresAt
     ) internal view returns (bytes memory) {
         bytes32 messageHash =
-            keccak256(abi.encodePacked(orderTrader, positionId, triggerPrice, nonce, expiresAt, address(executor)));
+            keccak256(
+                abi.encodePacked(orderTrader, positionId, triggerPrice, nonce, expiresAt, address(executor))
+            );
 
         bytes32 ethSignedHash = messageHash.toEthSignedMessageHash();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(traderPk, ethSignedHash);

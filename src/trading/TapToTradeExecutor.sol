@@ -193,8 +193,9 @@ contract TapToTradeExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant onlyRole(KEEPER_ROLE) returns (uint256 positionId) {
         // Verify user signature (can be from trader OR authorized session key)
-        bytes32 messageHash =
-            keccak256(abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this)));
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this))
+        );
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);

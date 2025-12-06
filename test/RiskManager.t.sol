@@ -200,7 +200,9 @@ contract RiskManagerTest is Test {
     function testCheckLiquidation_Long_ShouldLiquidate() public view {
         // Long position at 50000, current 45000 (below liq price of 46000)
         bool shouldLiquidate =
-            riskManager.checkLiquidation(true, 50000 * 10 ** 8, 45000 * 10 ** 8, 1000 * 10 ** 6, 10000 * 10 ** 6, "BTC");
+            riskManager.checkLiquidation(
+                true, 50000 * 10 ** 8, 45000 * 10 ** 8, 1000 * 10 ** 6, 10000 * 10 ** 6, "BTC"
+            );
 
         assertTrue(shouldLiquidate);
     }
@@ -208,7 +210,9 @@ contract RiskManagerTest is Test {
     function testCheckLiquidation_Long_ShouldNotLiquidate() public view {
         // Long position at 50000, current 47000 (above liq price)
         bool shouldLiquidate =
-            riskManager.checkLiquidation(true, 50000 * 10 ** 8, 47000 * 10 ** 8, 1000 * 10 ** 6, 10000 * 10 ** 6, "BTC");
+            riskManager.checkLiquidation(
+                true, 50000 * 10 ** 8, 47000 * 10 ** 8, 1000 * 10 ** 6, 10000 * 10 ** 6, "BTC"
+            );
 
         assertFalse(shouldLiquidate);
     }

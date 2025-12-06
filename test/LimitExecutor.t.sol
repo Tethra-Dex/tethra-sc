@@ -380,10 +380,7 @@ contract LimitExecutorTest is Test {
         // Execute order
         vm.startPrank(keeper);
         LimitExecutor.SignedPrice memory signedPrice = LimitExecutor.SignedPrice({
-            symbol: "BTC",
-            price: TRIGGER_PRICE_LONG,
-            timestamp: block.timestamp,
-            signature: hex"00"
+            symbol: "BTC", price: TRIGGER_PRICE_LONG, timestamp: block.timestamp, signature: hex"00"
         });
         executor.executeLimitOpenOrder(orderId, signedPrice);
         vm.stopPrank();
@@ -427,10 +424,7 @@ contract LimitExecutorTest is Test {
         // Execute order
         vm.startPrank(keeper);
         LimitExecutor.SignedPrice memory signedPrice = LimitExecutor.SignedPrice({
-            symbol: "BTC",
-            price: TRIGGER_PRICE_LONG,
-            timestamp: block.timestamp,
-            signature: hex"00"
+            symbol: "BTC", price: TRIGGER_PRICE_LONG, timestamp: block.timestamp, signature: hex"00"
         });
         executor.executeLimitOpenOrder(orderId, signedPrice);
         vm.stopPrank();
@@ -479,10 +473,7 @@ contract LimitExecutorTest is Test {
         executor.executeLimitOpenOrder(
             orderId,
             LimitExecutor.SignedPrice({
-                symbol: "BTC",
-                price: TRIGGER_PRICE_LONG,
-                timestamp: block.timestamp,
-                signature: hex"00"
+                symbol: "BTC", price: TRIGGER_PRICE_LONG, timestamp: block.timestamp, signature: hex"00"
             })
         );
         vm.stopPrank();
@@ -544,10 +535,7 @@ contract LimitExecutorTest is Test {
         executor.executeLimitOpenOrder(
             orderId,
             LimitExecutor.SignedPrice({
-                symbol: "BTC",
-                price: TRIGGER_PRICE_LONG,
-                timestamp: block.timestamp,
-                signature: hex"00"
+                symbol: "BTC", price: TRIGGER_PRICE_LONG, timestamp: block.timestamp, signature: hex"00"
             })
         );
         vm.stopPrank();

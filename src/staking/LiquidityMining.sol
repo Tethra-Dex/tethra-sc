@@ -54,36 +54,15 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
     uint256 public earlyWithdrawPenaltyBps = 1500;
 
     // Events
-    event LiquidityAdded(
-        address indexed provider,
-        uint256 amount,
-        uint256 timestamp
-    );
+    event LiquidityAdded(address indexed provider, uint256 amount, uint256 timestamp);
 
-    event LiquidityRemoved(
-        address indexed provider,
-        uint256 amount,
-        uint256 penalty,
-        uint256 timestamp
-    );
+    event LiquidityRemoved(address indexed provider, uint256 amount, uint256 penalty, uint256 timestamp);
 
-    event RewardsClaimed(
-        address indexed provider,
-        uint256 amount,
-        uint256 timestamp
-    );
+    event RewardsClaimed(address indexed provider, uint256 amount, uint256 timestamp);
 
-    event EmissionRateUpdated(
-        uint256 oldRate,
-        uint256 newRate,
-        uint256 timestamp
-    );
+    event EmissionRateUpdated(uint256 oldRate, uint256 newRate, uint256 timestamp);
 
-    event ParametersUpdated(
-        uint256 minDeposit,
-        uint256 lockPeriod,
-        uint256 earlyWithdrawPenaltyBps
-    );
+    event ParametersUpdated(uint256 minDeposit, uint256 lockPeriod, uint256 earlyWithdrawPenaltyBps);
 
     constructor(address _usdc, address _tetraToken) Ownable(msg.sender) {
         require(_usdc != address(0), "LiquidityMining: Invalid USDC");
@@ -132,10 +111,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
     function removeLiquidity(uint256 amount) external nonReentrant {
         ProviderInfo storage provider = providers[msg.sender];
         require(amount > 0, "LiquidityMining: Invalid amount");
-        require(
-            provider.amount >= amount,
-            "LiquidityMining: Insufficient liquidity"
-        );
+        require(provider.amount >= amount, "LiquidityMining: Insufficient liquidity");
 
         // Update pool rewards before removing liquidity
         _updatePool();
@@ -145,8 +121,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
 
         // Calculate penalty if withdrawing early
         uint256 penalty = 0;
-        bool isEarlyWithdraw = block.timestamp <
-            provider.depositedAt + lockPeriod;
+        bool isEarlyWithdraw = block.timestamp < provider.depositedAt + lockPeriod;
 
         if (isEarlyWithdraw) {
             penalty = (amount * earlyWithdrawPenaltyBps) / 10000;
@@ -224,9 +199,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
         ProviderInfo storage providerInfo = providers[provider];
 
         if (providerInfo.amount > 0) {
-            uint256 pending = (providerInfo.amount * accTetraPerShare) /
-                1e12 -
-                providerInfo.rewardDebt;
+            uint256 pending = (providerInfo.amount * accTetraPerShare) / 1e12 - providerInfo.rewardDebt;
             if (pending > 0) {
                 providerInfo.pendingRewards += pending;
             }
@@ -238,9 +211,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
      * @param provider Provider address
      * @return pending Pending TETRA rewards
      */
-    function getPendingRewards(
-        address provider
-    ) external view returns (uint256 pending) {
+    function getPendingRewards(address provider) external view returns (uint256 pending) {
         ProviderInfo memory providerInfo = providers[provider];
 
         uint256 _accTetraPerShare = accTetraPerShare;
@@ -253,10 +224,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
 
         if (providerInfo.amount > 0) {
             pending =
-                providerInfo.pendingRewards +
-                (providerInfo.amount * _accTetraPerShare) /
-                1e12 -
-                providerInfo.rewardDebt;
+                providerInfo.pendingRewards + (providerInfo.amount * _accTetraPerShare) / 1e12 - providerInfo.rewardDebt;
         }
     }
 
@@ -268,17 +236,10 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
      * @return depositedAt Deposit timestamp
      * @return canWithdrawWithoutPenalty Whether can withdraw without penalty
      */
-    function getProviderInfo(
-        address provider
-    )
+    function getProviderInfo(address provider)
         external
         view
-        returns (
-            uint256 amount,
-            uint256 pendingRewards,
-            uint256 depositedAt,
-            bool canWithdrawWithoutPenalty
-        )
+        returns (uint256 amount, uint256 pendingRewards, uint256 depositedAt, bool canWithdrawWithoutPenalty)
     {
         ProviderInfo memory providerInfo = providers[provider];
 
@@ -290,10 +251,8 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
             _accTetraPerShare += (tetraReward * 1e12) / totalLiquidity;
         }
 
-        uint256 pending = providerInfo.pendingRewards +
-            (providerInfo.amount * _accTetraPerShare) /
-            1e12 -
-            providerInfo.rewardDebt;
+        uint256 pending =
+            providerInfo.pendingRewards + (providerInfo.amount * _accTetraPerShare) / 1e12 - providerInfo.rewardDebt;
 
         return (
             providerInfo.amount,
@@ -320,12 +279,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
             uint256 _accTetraPerShare
         )
     {
-        return (
-            totalLiquidity,
-            totalRewardsDistributed,
-            tetraPerBlock,
-            accTetraPerShare
-        );
+        return (totalLiquidity, totalRewardsDistributed, tetraPerBlock, accTetraPerShare);
     }
 
     /**
@@ -375,27 +329,19 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
      * @param _lockPeriod Lock period in seconds
      * @param _earlyWithdrawPenaltyBps Early withdraw penalty in basis points
      */
-    function updateParameters(
-        uint256 _minDeposit,
-        uint256 _lockPeriod,
-        uint256 _earlyWithdrawPenaltyBps
-    ) external onlyOwner {
+    function updateParameters(uint256 _minDeposit, uint256 _lockPeriod, uint256 _earlyWithdrawPenaltyBps)
+        external 
+        onlyOwner
+    {
         require(_minDeposit > 0, "LiquidityMining: Invalid min deposit");
         require(_lockPeriod <= 90 days, "LiquidityMining: Lock too long");
-        require(
-            _earlyWithdrawPenaltyBps <= 2500,
-            "LiquidityMining: Penalty too high"
-        ); // Max 25%
+        require(_earlyWithdrawPenaltyBps <= 2500, "LiquidityMining: Penalty too high"); // Max 25%
 
         minDeposit = _minDeposit;
         lockPeriod = _lockPeriod;
         earlyWithdrawPenaltyBps = _earlyWithdrawPenaltyBps;
 
-        emit ParametersUpdated(
-            _minDeposit,
-            _lockPeriod,
-            _earlyWithdrawPenaltyBps
-        );
+        emit ParametersUpdated(_minDeposit, _lockPeriod, _earlyWithdrawPenaltyBps);
     }
 
     /**
@@ -414,11 +360,7 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
      * @param to Recipient address
      * @param amount Amount to withdraw
      */
-    function emergencyWithdraw(
-        address token,
-        address to,
-        uint256 amount
-    ) external onlyOwner {
+    function emergencyWithdraw(address token, address to, uint256 amount) external onlyOwner {
         require(token != address(0), "LiquidityMining: Invalid token");
         require(to != address(0), "LiquidityMining: Invalid address");
         require(amount > 0, "LiquidityMining: Invalid amount");

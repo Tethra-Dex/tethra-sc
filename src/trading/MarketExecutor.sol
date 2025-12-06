@@ -208,9 +208,8 @@ contract MarketExecutor is AccessControl, ReentrancyGuard {
         bytes calldata userSignature
     ) external nonReentrant returns (uint256 positionId) {
         // Verify user signature
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this))
-        );
+        bytes32 messageHash =
+            keccak256(abi.encodePacked(trader, symbol, isLong, collateral, leverage, metaNonces[trader], address(this)));
 
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address signer = ethSignedMessageHash.recover(userSignature);

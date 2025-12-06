@@ -223,8 +223,8 @@ contract LiquidityMining is Ownable, ReentrancyGuard {
         }
 
         if (providerInfo.amount > 0) {
-            pending = providerInfo.pendingRewards + (providerInfo.amount * _accTetraPerShare) / 1e12
-                - providerInfo.rewardDebt;
+            pending =
+                providerInfo.pendingRewards + (providerInfo.amount * _accTetraPerShare) / 1e12 - providerInfo.rewardDebt;
         }
     }
 
